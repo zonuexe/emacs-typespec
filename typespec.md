@@ -40,7 +40,7 @@ TYPE ::= symbol
        | (and TYPE...)
        | (not TYPE)
        | (function (TYPE...) TYPE)
-       | (function (TYPE...) (guard TYPE))
+       | (function (TYPE...) (:guard TYPE))
        | (function (TYPE...) (:assert TYPE))
        | (list TYPE)
        | (vector TYPE)
@@ -135,10 +135,10 @@ Optional future extension:
 ### Type Guards (TypeScript-style)
 
 To model type-guard predicates (e.g., `x is string` in TypeScript),
-use a `guard` return type:
+use a `:guard` return type:
 
 ```
-(function (unknown) (guard string))
+(function (unknown) (:guard string))
 ```
 
 This means the function returns a boolean value, and on success it
@@ -358,7 +358,7 @@ silent misinterpretation.
 ### Type guard predicate
 
 ```
-(typespec #'stringp (function (unknown) (guard string)))
+(typespec #'stringp (function (unknown) (:guard string)))
 ```
 
 ### seq-map
