@@ -15,17 +15,56 @@ The current draft lives in [**`typespec.md`**](typespec.md).
 
 ## Usage
 
+### About `typespec.el`
+
+`typespec.el` provides the `typespec` macro. It is intentionally small and meant to be used as a compile-time helper, so prefer:
+
+```elisp
+(eval-when-compile
+  (require 'typespec))
+```
+
+The macro stores a literal typespec on the function symbol and has no runtime execution logic, so annotating functions directly in implementation files should have negligible runtime cost.
+
+### Annotate your functions
+
 Simple function type:
 
 ```elisp
+(eval-when-compile
+  (require 'typespec))
+
 (defun my-identity (argument)
   "Return the ARGUMENT unchanged."
   argument)
 
+;; Simple and safe, but it cannot express that the output is the same value.
+(typespec #'my-identity (function (unknown) unknown))
+
+;; Use :forall to bind a type parameter and return the same type.
 (typespec #'my-identity (:forall (a) (function (a) a)))
 ```
 
-Property-based check with `ert-fnspec-check`:
+より複雑な例を考えてみましょう。
+
+```elisp
+(defun my-times2 (n)
+  "Return N multiplied by 2."
+  (+ n 2))
+
+;; This looks reasonable, but it misses literal refinement: (my-times2 42)
+;; can be inferred as (const 84), not just integer.
+(typespec #'my-times2 (:forall (a) (function (a) a)))
+
+;; Use generalize-signed to widen literal results while preserving sign.
+(typespec #'my-times2
+  (:forall (a)
+    (function (a) (generalize-signed a))))
+```
+
+### Property-based checks
+
+Use `ert-fnspec-check` for property-based checking:
 
 ```elisp
 (ert-fnspec-check (lambda (xs) (reverse (reverse xs)))  '(:xs (list integer))
