@@ -42,6 +42,7 @@ TYPE ::= symbol
        | (function (TYPE...) TYPE)
        | (function (TYPE...) (:guard TYPE))
        | (function (TYPE...) (:assert TYPE))
+       | (if PRED TYPE TYPE)
        | (list TYPE)
        | (vector TYPE)
        | (sequence TYPE)
@@ -54,6 +55,10 @@ TYPE ::= symbol
        | (:plist-of ENTRY...)
        | (:class CLASS)
        | (:forall (TYPEVAR...) TYPE)
+       | (generalize TYPE TYPE)
+       | (generalize-signed TYPE)
+       | (downcast TYPE TYPE)
+       | (benevolent TYPE)
        | (value-of TUPLE)
        | (var SYMBOL)
        | (plist-key-of PLIST)
@@ -84,6 +89,8 @@ Common numeric shorthand (recommended):
 - `non-negative-int` — `(integer 0 *)`
 - `negative-int` — `(integer * -1)`
 - `non-positive-int` — `(integer * 0)`
+- `positive-float` — `(float (0) *)`
+- `negative-float` — `(float * (0))`
 
 Range notation uses `*` for an unbounded side. For example,
 `(integer * 10)` means any integer <= 10, and `(integer 0 *)` means
@@ -157,6 +164,53 @@ the argument on success, use `:assert` as the return type:
 This means the function either signals an error or returns normally,
 and on the normal path the argument is treated as `integer`.
 
+### Conditional Return Types (Restricted)
+
+To keep conditional types predictable, only a small, safe predicate
+language is allowed. The condition can use these operators:
+
+`if`, `null`, `eq`, `eql`, `equal`, `equal-including-properties`,
+`=`, `/=`, `>`, `>=`, `<`, `<=`, `value<`, `char<`, `char<=`, `char>`,
+`char>=`, `char=`, `char/=`, `string<`, `string<=`, `string>`,
+`string>=`, `string=`, `string/=`, `string-lessp`, `nth`, `nthcdr`,
+`car`, `cdr`, `car-safe`, `cdr-safe`, `plist-get`, `plist-member`,
+`alist-get`, `assoc`, `assq`, `rassoc`, `memq`, `member`,
+`member-ignore-case`, `aref`, `elt`, `length`, `stringp`, `integerp`,
+`symbolp`, `butlast`, `kbd`, `last`,
+`log10`, `lsh`, `macrop`,
+`make-composed-keymap`, `mouse-event-p`, `number-sequence`,
+`provided-mode-derived-p`,
+`sha1`, `string-equal-ignore-case`, `string-greaterp`, `string-lines`,
+`string-match-p`, `string-prefix-p`, `string-replace`, `string-suffix-p`,
+`string-to-list`, `string-to-vector`, `string-trim-right`, `syntax-class`,
+`version-list-<`, `version-list-<=`, `version-list-=`,
+`version-list-not-zero`, `version-to-list`, `version<`, `version<=`,
+`version=`, `zerop`, `cl-plusp`, `cl-minusp`, `cl-evenp`, `cl-oddp`,
+`cl-equalp`, `cl-endp`, `cl-first`, `cl-second`, `cl-third`,
+`cl-fourth`, `cl-fifth`, `cl-sixth`, `cl-seventh`, `cl-eighth`,
+`cl-ninth`, `cl-tenth`, `cl-list-length`, `seq-empty-p`, `seq-length`,
+`seq-elt`.
+
+The operands are limited to `&args`, `&rest`, and `&keys` (and values
+derived from them), plus literal constants such as quoted symbols,
+keywords, strings, and numbers.
+
+Form:
+
+```
+(if PRED THEN ELSE)
+```
+
+Example:
+
+```
+(typespec #'is-string
+  (function (value &keys)
+    (if (plist-get &keys :assert)
+        (:assert string)
+      (:guard string))))
+```
+
 ### Argument Tuples and `value-of`
 
 `&args` and `&rest` are reserved keywords that refer to tuples of the
@@ -176,6 +230,43 @@ Example (two-argument `or`):
   (:forall (a b)
     (function (a b) (value-of &args))))
 ```
+
+### `generalize` (widen literal types)
+
+`(generalize T TARGET)` widens a precise type such as `(const 42)` into a
+broader, user-chosen target type (for example `integer` or `positive-int`).
+This is intended for cases where the strictest checker would infer a literal
+type, but you want to declare a usable supertype instead.
+
+### `generalize-signed` (sign-preserving widening)
+
+`(generalize-signed T)` widens numeric literal types while preserving sign.
+
+- `(const 42)` => `positive-int`
+- `(const -42)` => `negative-int`
+- `(const 42.0)` => `positive-float`
+- `(const -42.0)` => `negative-float`
+- `(const 0)` or `(const 0.0)` => `(const 0)` or `(const 0.0)`
+- `integer`/`float`/`number` => unchanged
+- `unknown`/`mixed` => `never`
+
+The `unknown`/`mixed` case intentionally fails closed; use a separate
+downcast helper if you want to relax that constraint.
+
+### `downcast` (explicit type assertion)
+
+`(downcast T TARGET)` explicitly treats `T` as `TARGET`. This is a deliberate
+escape hatch, similar to a type assertion, and should be used sparingly.
+Unlike `generalize`, `downcast` does not imply that `T` is a subtype of
+`TARGET`; it simply asserts that it should be treated as such.
+
+### `benevolent` (soundness trade-off)
+
+`(benevolent T)` marks a type as intentionally permissive. It allows values to
+flow into `T`-typed positions even when a strict checker would reject them.
+This is a pragmatic escape hatch intended for real-world dynamic code where
+exact type boundaries are difficult to enforce. Use it sparingly and only when
+the trade-off is acceptable.
 
 ### Variable types (`var`) and constant values
 
