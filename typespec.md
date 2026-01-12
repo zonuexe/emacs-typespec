@@ -41,6 +41,7 @@ TYPE ::= symbol
        | (not TYPE)
        | (function (TYPE...) TYPE)
        | (function (TYPE...) (:guard TYPE))
+       | (function (TYPE...) (:guard! TYPE))
        | (function (TYPE...) (:assert TYPE))
        | (if PRED TYPE TYPE)
        | (list TYPE)
@@ -59,6 +60,7 @@ TYPE ::= symbol
        | (generalize-signed TYPE)
        | (downcast TYPE TYPE)
        | (benevolent TYPE)
+       | (rx RX-EXPR)
        | (value-of TUPLE)
        | (var SYMBOL)
        | (plist-key-of PLIST)
@@ -151,6 +153,20 @@ use a `:guard` return type:
 This means the function returns a boolean value, and on success it
 refines the checked value to `string` in the caller context. The
 `boolean` return is implicit; you do not need to write it separately.
+
+Important: `:guard` narrows only on the *true* branch. The *false* branch
+does not imply the complement type, because many predicates are not total
+(e.g. a regexp-based predicate). If you want a predicate that partitions
+the input type into true/false cases, use `:guard!` instead.
+
+```emacs-lisp
+(function (unknown) (:guard! string))
+```
+
+`(:guard! T)` means the true branch narrows to `T` and the false branch
+narrows to `(not T)`. In Psalm, the default `assert-if-true` is exclusive,
+and `=type` relaxes that; typespec keeps the TypeScript-style guard semantics
+for `:guard` and uses `:guard!` to make exclusivity explicit.
 
 ### Assertion Guards
 
@@ -259,6 +275,36 @@ downcast helper if you want to relax that constraint.
 escape hatch, similar to a type assertion, and should be used sparingly.
 Unlike `generalize`, `downcast` does not imply that `T` is a subtype of
 `TARGET`; it simply asserts that it should be treated as such.
+
+### `rx` (regexp via `rx` syntax)
+
+`(rx RX-EXPR)` is a type that accepts values matching the regexp produced by
+`rx`. Any [`rx` form](https://www.gnu.org/software/emacs/manual/html_node/elisp/Rx-Notation.html)
+is allowed, but for type usage it is recommended to anchor the whole string, for example:
+
+```emacs-lisp
+(rx string-start (+ (any "0-9")) string-end)
+```
+
+Example: Japanese postal codes with a leading "〒" and no spaces:
+
+```emacs-lisp
+(defun jp-postal-code-p (value)
+  "Return non-nil when VALUE is a Japanese postal code string."
+  (and (stringp value)
+       (string-match-p
+        (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end)
+        value)))
+
+(typespec #'jp-postal-code-p
+  (function (unknown)
+            (:guard (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end))))
+
+;; Note: this is intentionally `:guard`, not `:guard!`.
+;; If the predicate fails, the value is either a non-string or a string
+;; that does not match the postal-code pattern, so the false branch
+;; cannot be narrowed to `(not string)`.
+```
 
 ### `benevolent` (soundness trade-off)
 
