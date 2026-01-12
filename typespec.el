@@ -3,7 +3,11 @@
 ;; Copyright (C) 2026  USAMI Kenta
 
 ;; Author: USAMI Kenta <tadsan@zonu.me>
+;; Homepage: https://github.com/zonuexe/emacs-typespec.el
 ;; Keywords: lisp, extensions
+;; Version: 0.0.1
+;; Package-Requires: ((emacs "29.1"))
+;; License: GPL-3.0-or-later
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
