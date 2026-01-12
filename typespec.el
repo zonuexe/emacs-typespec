@@ -32,6 +32,8 @@
 ;; See typespec.md for the current spec syntax and conventions.
 
 ;;; Code:
+(require 'typespec-core)
+
 (defmacro typespec (function spec &rest options)
   "Attach SPEC to FUNCTION as a `typespec' function property.
 SPEC is stored as literal data and is not evaluated.
@@ -39,7 +41,8 @@ OPTIONS are reserved for future use and currently must be empty."
   (declare (indent 1))
   (when options
     (error "Unsupported typespec options: %S" options))
-  `(function-put ,function 'typespec ',spec))
+  `(function-put ,function 'typespec
+                 ',(typespec--make-record spec)))
 
 (provide 'typespec)
 ;;; typespec.el ends here

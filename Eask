@@ -6,6 +6,7 @@
 (keywords "lisp" "extensions")
 
 (package-file "typespec.el")
+(files "typespec-core.el")
 
 (script "test" "echo \"Error: no test specified\" && exit 1")
 
