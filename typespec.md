@@ -144,7 +144,7 @@ Optional future extension:
 To model type-guard predicates (e.g., `x is string` in TypeScript),
 use a `:guard` return type:
 
-```
+```emacs-lisp
 (function (unknown) (:guard string))
 ```
 
@@ -157,7 +157,7 @@ refines the checked value to `string` in the caller context. The
 For assertion-style helpers that signal an error on failure and refine
 the argument on success, use `:assert` as the return type:
 
-```
+```emacs-lisp
 (typespec #'assert-int (function (unknown) (:assert integer)))
 ```
 
@@ -197,13 +197,13 @@ keywords, strings, and numbers.
 
 Form:
 
-```
+```emacs-lisp
 (if PRED THEN ELSE)
 ```
 
 Example:
 
-```
+```emacs-lisp
 (typespec #'is-string
   (function (value &keys)
     (if (plist-get &keys :assert)
@@ -225,7 +225,7 @@ without naming each argument.
 
 Example (two-argument `or`):
 
-```
+```emacs-lisp
 (typespec #'or
   (:forall (a b)
     (function (a b) (value-of &args))))
@@ -279,7 +279,7 @@ the trade-off is acceptable.
 
 Example:
 
-```
+```emacs-lisp
 (defconst orders '(asc desc))
 (value-of (var 'orders))
 ;; => (or (const asc) (const desc))
@@ -298,7 +298,7 @@ exact key sets in the core syntax.
 
 Example with fixed keys:
 
-```
+```emacs-lisp
 (typespec #'make-user
   (function (&keys (:plist-of
                     (:name string)
@@ -315,7 +315,7 @@ Example with fixed keys:
 `(:plist-of ...)` models a plist with fixed key names and per-key types,
 similar to PHPStan array-shapes.
 
-```
+```emacs-lisp
 (:plist-of
   (:name string)
   (:age non-negative-int)
@@ -414,7 +414,7 @@ and documented separately to avoid confusion with `cl-typep` semantics.
 
 To express OCaml-style polymorphism:
 
-```
+```emacs-lisp
 (:forall (a) (function (a) a))
 ```
 
@@ -435,26 +435,26 @@ silent misinterpretation.
 
 ### Identity
 
-```
+```emacs-lisp
 (typespec #'identity (:forall (a) (function (a) a)))
 ```
 
 ### Max
 
-```
+```emacs-lisp
 (typespec #'max
   (function ((or number marker) &rest (or number marker)) number))
 ```
 
 ### Type guard predicate
 
-```
+```emacs-lisp
 (typespec #'stringp (function (unknown) (:guard string)))
 ```
 
 ### seq-map
 
-```
+```emacs-lisp
 (typespec #'seq-map
   (:forall (a b)
     (function ((function (a) b) (sequence a)) (list b))))
@@ -462,14 +462,14 @@ silent misinterpretation.
 
 For example, strings are sequences of characters, so:
 
-```
+```emacs-lisp
 (seq-map #'identity "abc")
 ;; => (97 98 99)
 ```
 
 ### syntax-ppss
 
-```
+```emacs-lisp
 (typespec #'syntax-ppss
   (function (&optional (or integer marker))
             (:tuple integer
@@ -494,13 +494,13 @@ start, open paren stack, and last syntax code).
 
 ### not / or
 
-```
+```emacs-lisp
 (typespec #'not (function (unknown) boolean))
 ```
 
 `or` is a special form (not a regular function), but for documentation
 purposes a coarse type can be written as:
 
-```
+```emacs-lisp
 (typespec #'or (function (&rest unknown) unknown))
 ```
