@@ -308,7 +308,8 @@ Example:
 This allows types like `or` to describe “returns one of its arguments”
 without naming each argument.
 
-For dotted tuples, `value-of` includes the tail type as an additional
+If a proper list is supplied, it is treated as `(:tuple ...)` for this
+purpose. For dotted tuples, `value-of` includes the tail type as an additional
 union member (e.g., `(:tuple a b . c)` => `(or a b c)`).
 
 Example (two-argument `or`):
@@ -345,6 +346,11 @@ It is shorthand for `(cons T (list T))`.
 
 The `unknown`/`mixed` case intentionally fails closed; use a separate
 downcast helper if you want to relax that constraint.
+This prevents accidental widening from an unknown value into a signed
+refinement that would be unjustified. The practical impact is that
+`generalize-signed` is only safe for literal or already-numeric inputs;
+if you apply it to `unknown`/`mixed`, the result becomes uninhabited
+and any use should be treated as impossible or a type error.
 
 ### `downcast` (explicit type assertion)
 
@@ -398,7 +404,7 @@ the trade-off is acceptable.
 `(var SYMBOL)` refers to the type of a Lisp variable by name.
 
 - For `defconst` values, the variable is treated as a constant; a list
-  of symbols expands to a union of `const` values.
+  of symbols is treated as a tuple of `const` values.
 - For `defcustom` values, use the declared `:type` if present.
 - Otherwise, the variable type is `unknown`.
 
@@ -406,8 +412,21 @@ Example:
 
 ```emacs-lisp
 (defconst orders '(asc desc))
-(value-of (var 'orders))
-;; => (or (const asc) (const desc))
+(var 'orders)
+;; => (:tuple (const asc) (const desc))
+
+(defun my-sorted-list (items order)
+  "Return ITEMS sorted by ORDER."
+  (let ((items (copy-sequence items)))
+    (cl-sort items
+             (if (eq order 'asc)
+                 #'value<
+               (lambda (a b) (value< b a))))))
+
+(typespec #'my-sorted-list
+  (:forall (a)
+    (function ((list a) (value-of (var 'orders)))
+              (list a))))
 ```
 
 ### Keyword Arguments (`&keys`) and plist helpers
@@ -566,6 +585,23 @@ To express OCaml-style polymorphism:
 ```
 
 `a` is a type variable; `:forall` binds it for the body.
+
+### `:forall` Scope and Nesting
+
+`(:forall (a b ...) BODY)` introduces type variables that are in scope
+**only inside** `BODY`. Type variables are lexical: they do not leak to
+surrounding forms.
+
+Nested `:forall` forms shadow outer variables of the same name. For example,
+the inner `a` is distinct from the outer `a`:
+
+```emacs-lisp
+(:forall (a)
+  (function (a) (:forall (a) (function (a) a))))
+```
+
+To avoid shadowing, use distinct names or keep `:forall` at the outermost
+function type where possible.
 
 ## Compatibility Summary
 
