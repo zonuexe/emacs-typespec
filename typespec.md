@@ -353,36 +353,116 @@ The return value is also treated as that same refined type.
 In other words, `:assert` is shorthand for “this function returns the
 checked value and refines it on success.”
 
+Another example with a state-dependent predicate (allowed here, but not
+inside `if` predicates):
+
+```emacs-lisp
+(defun ensure-live-process (proc)
+  "Signal an error unless PROC is a live process; return PROC."
+  (unless (process-live-p proc)
+    (signal 'wrong-type-argument (list 'process-live-p proc)))
+  proc)
+
+(typespec #'ensure-live-process (function (process) (:assert process)))
+```
+
+`process-live-p` is state-dependent, so it is not allowed in `if` predicates,
+but it is fine inside `:assert` because the check happens at runtime.
+
 ### Conditional Return Types (Restricted)
 
 To keep conditional types predictable, only a small, safe predicate
 language is allowed. The condition can use these operators:
 
-`if`, `null`, `eq`, `eql`, `equal`, `equal-including-properties`,
-`=`, `/=`, `>`, `>=`, `<`, `<=`, `value<`, `char<`, `char<=`, `char>`,
-`char>=`, `char=`, `char/=`, `string<`, `string<=`, `string>`,
-`string>=`, `string=`, `string/=`, `string-lessp`, `nth`, `nthcdr`,
-`car`, `cdr`, `car-safe`, `cdr-safe`, `plist-get`, `plist-member`,
-`alist-get`, `assoc`, `assq`, `rassoc`, `memq`, `member`,
-`member-ignore-case`, `aref`, `elt`, `length`, `stringp`, `integerp`,
-`symbolp`, `butlast`, `kbd`, `last`,
-`log10`, `lsh`, `macrop`,
-`make-composed-keymap`, `mouse-event-p`, `number-sequence`,
-`provided-mode-derived-p`,
-`sha1`, `string-equal-ignore-case`, `string-greaterp`, `string-lines`,
-`string-match-p`, `string-prefix-p`, `string-replace`, `string-suffix-p`,
-`string-to-list`, `string-to-vector`, `string-trim-right`, `syntax-class`,
-`version-list-<`, `version-list-<=`, `version-list-=`,
-`version-list-not-zero`, `version-to-list`, `version<`, `version<=`,
-`version=`, `zerop`, `cl-plusp`, `cl-minusp`, `cl-evenp`, `cl-oddp`,
-`cl-equalp`, `cl-endp`, `cl-first`, `cl-second`, `cl-third`,
-`cl-fourth`, `cl-fifth`, `cl-sixth`, `cl-seventh`, `cl-eighth`,
-`cl-ninth`, `cl-tenth`, `cl-list-length`, `seq-empty-p`, `seq-length`,
-`seq-elt`.
+Special forms:
+- `if`
+
+Predicates (type/shape checks):
+- `stringp`, `integerp`, `symbolp`, `null`
+- `consp`, `atom`, `listp`, `nlistp`
+- `keywordp`, `vectorp`, `recordp`, `arrayp`, `sequencep`
+- `bufferp`, `markerp`, `bool-vector-p`
+- `integer-or-marker-p`, `numberp`, `number-or-marker-p`, `floatp`, `natnump`
+- `booleanp`, `proper-list-p`, `fixnump`, `bignump`, `wholenump`
+- `functionp`, `hash-table-p`
+- `subrp`, `byte-code-function-p`, `interpreted-function-p`, `closurep`,
+  `module-function-p`
+- `char-or-string-p`, `char-table-p`, `char-uppercase-p`
+- `string-empty-p`, `string-blank-p`, `string-or-null-p`
+- `multibyte-string-p`, `vector-or-char-table-p`
+- `bare-symbol-p`, `symbol-with-pos-p`
+
+Comparators:
+- `=`, `/=`, `>`, `>=`, `<`, `<=`
+- `value<`
+- `char-equal`
+- `string<`, `string>`, `string=`
+- `string-lessp`
+- `equal`, `eql`, `eq`, `equal-including-properties`
+
+Sequence and list accessors:
+- `car`, `cdr`, `car-safe`, `cdr-safe`, `nth`, `nthcdr`, `elt`, `aref`, `length`
+- `reverse`, `last`, `butlast`, `safe-length`, `copy-sequence`
+- `memq`, `member`, `member-ignore-case`
+- `assoc`, `assq`, `rassoc`, `alist-get`
+- `plist-get`, `plist-member`
+
+Numeric and math helpers:
+- `log10`, `lsh`, `zerop`, `number-sequence`
+- `+`, `-`, `*`, `/`, `%`, `mod`, `1+`, `1-`, `abs`, `max`, `min`
+- `floor`, `ceiling`, `round`, `truncate`, `isnan`, `cl-signum`
+- `logand`, `logior`, `logxor`, `lognot`, `logcount`, `ash`
+
+String helpers:
+- `concat`, `string-as-multibyte`, `string-as-unibyte`, `string-bytes`
+- `string-chop-newline`, `string-clean-whitespace`, `string-distance`
+- `string-equal`, `string-equal-ignore-case`, `string-greaterp`, `string-lessp`
+- `string-join`, `string-limit`, `string-lines`, `string-match-p`
+- `upcase`, `downcase`, `capitalize`, `char-to-string`, `make-string`, `substring`
+- `string-pad`, `string-prefix-p`, `string-remove-prefix`, `string-remove-suffix`
+- `string-replace`, `string-reverse`, `string-search`, `string-split`, `string-suffix-p`
+- `string-to-char`, `string-to-list`, `string-to-multibyte`, `string-to-number`
+- `string-to-unibyte`, `string-to-vector`, `string-trim`, `string-trim-left`
+- `string-trim-right`, `string-truncate-left`, `string-version-lessp`
+- `number-to-string`
+
+Version helpers:
+- `version-list-<`, `version-list-<=`, `version-list-=`
+- `version-list-not-zero`, `version-to-list`, `version<`, `version<=`, `version=`
+
+CL and seq helpers:
+- `cl-plusp`, `cl-minusp`, `cl-evenp`, `cl-oddp`, `cl-equalp`, `cl-endp`
+- `cl-first`, `cl-second`, `cl-third`, `cl-fourth`, `cl-fifth`, `cl-sixth`
+- `cl-seventh`, `cl-eighth`, `cl-ninth`, `cl-tenth`, `cl-list-length`
+- `seq-empty-p`, `seq-length`, `seq-elt`
+
+Other:
+- `symbol-name`, `identity`, `not`, `type-of`, `cl-type-of`
+- `kbd`, `make-composed-keymap`, `mouse-event-p`, `sha1`, `syntax-class`
 
 The operands are limited to `&args`, `&rest`, and `&keys` (and values
 derived from them), plus literal constants such as quoted symbols,
 keywords, strings, and numbers.
+
+Unsupported predicates (state-dependent): `macrop`, `provided-mode-derived-p`.
+These depend on runtime loading state and should not be used in conditional
+type predicates.
+
+Not allowed: `intern`, `make-symbol`, `symbol-value`, `symbol-function`,
+`boundp`, `fboundp`, `indirect-function`, `indirect-variable`, or other
+environment-dependent symbol operations.
+Not allowed in `if` predicates: buffer-, process-, or window-dependent queries
+such as `current-buffer`, `buffer-name`, `buffer-live-p`, `process-status`,
+`process-live-p`, `get-buffer`, `get-buffer-process`, `selected-window`,
+`window-live-p`, and any other predicates that consult mutable editor state.
+These are still allowed as type keywords elsewhere in a spec, but not in
+conditional return predicates.
+
+Special cases:
+- `syntax-class` is supported only when its argument is a literal syntax
+  descriptor, not when it depends on the current buffer's syntax table.
+- `sha1` is supported only for string inputs (buffers and file names are
+  state-dependent and are not allowed in type predicates).
 
 Form:
 
