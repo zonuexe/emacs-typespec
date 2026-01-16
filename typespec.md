@@ -45,6 +45,10 @@ TYPE ::= symbol
        | (function ARGS (:guard! TYPE))
        | (function ARGS (:assert TYPE))
        | (if PRED TYPE TYPE)
+       | (integer LOW HIGH)
+       | (float LOW HIGH)
+       | (real LOW HIGH)
+       | (number LOW HIGH)
        | (list TYPE)
        | (list+ TYPE)
        | (vector TYPE)
@@ -78,6 +82,9 @@ ARGSPEC ::= TYPE
 KEYSPEC ::= (:plist-of ENTRY...)
           | TYPE
 
+LOW  ::= * | NUMBER | (NUMBER)
+HIGH ::= * | NUMBER | (NUMBER)
+
 ENTRY ::= (KEY TYPE)
        | (:? KEY TYPE)
 ```
@@ -108,13 +115,18 @@ Common numeric shorthand (recommended):
 
 Range notation uses `*` for an unbounded side. For example,
 `(integer * 10)` means any integer <= 10, and `(integer 0 *)` means
-any integer >= 0. Bounds are inclusive.
+any integer >= 0. Bounds are inclusive by default.
+To indicate an exclusive bound, wrap it in a list: `(integer (0) *)`
+means greater than 0, and `(integer * (10))` means less than 10.
 
 Notes:
 
+- `t` is the `cl-typep` universal type: any value satisfies it. In this
+  spec, `t` is treated like `mixed` for compatibility.
 - `nil` is the singleton type with the single value `nil`.
 - `null` is an alias of `nil` (kept for `cl-typep` familiarity).
 - `never` is the empty/bottom type: it has no inhabitants.
+- `atom` means any non-cons value; it is equivalent to `(not cons)`.
 - `boolean`/`bool` is the set `{t, nil}`.
 - `character` corresponds to `(integer 0 (max-char))`, i.e. 0..4194304.
 
@@ -125,6 +137,16 @@ Example usage:
 (typespec #'error (function (&rest mixed) never))
 ```
 
+Note: container types are **not** automatically reduced when they contain
+`never`. For example, `(list never)` means “a (proper) list whose elements
+would have to be `never`”, which is only satisfied by the empty list. It is
+therefore **not** equivalent to `never` (which has no inhabitants at all).
+Similarly, `(:tuple never)` is an empty list tuple whose single element would
+have to be `never`, which is uninhabited, but the rule is explicit: only the
+empty list `(list)` is a value, and it does not satisfy `(:tuple never)`.
+Implementations may choose to simplify such cases, but should do so
+explicitly rather than implicitly.
+
 ### Elsa-inspired types
 
 - `unknown` — the *top type*: accepts anything, but is not implicitly
@@ -133,6 +155,7 @@ Example usage:
   implicitly accepted by any type and accepts any type.
 
 This mirrors the `unknown` vs `any` distinction in TypeScript.
+In this spec, `t` is treated like `mixed` for `cl-typep` compatibility.
 
 Example usage:
 
@@ -279,6 +302,8 @@ use a `:guard` return type:
 This means the function returns a boolean value, and on success it
 refines the checked value to `string` in the caller context. The
 `boolean` return is implicit; you do not need to write it separately.
+So the *actual* return type is `boolean`, and `:guard` adds a refinement
+effect on the first argument.
 
 The refined value is the **first positional argument** of the function.
 For multi-argument predicates, only the first argument is refined; the
@@ -324,6 +349,9 @@ the argument on success, use `:assert` as the return type:
 
 This means the function either signals an error or returns normally,
 and on the normal path the first argument is treated as `integer`.
+The return value is also treated as that same refined type.
+In other words, `:assert` is shorthand for “this function returns the
+checked value and refines it on success.”
 
 ### Conditional Return Types (Restricted)
 
@@ -367,6 +395,10 @@ It is **not** evaluated at runtime; it is used only by type checkers to
 refine types for THEN/ELSE. Implementations should treat PRED as a pure
 expression with no side effects. A predicate that uses disallowed forms
 or operands is invalid and should be rejected.
+
+`(if PRED THEN ELSE)` is intended for **return positions** of function
+types. It is not a general-purpose type constructor for arbitrary
+sub-positions (for example, `(list (if ...))` is not supported).
 
 Evaluation model (for type checkers):
 - PRED is evaluated symbolically using the argument types (not values).
@@ -419,12 +451,25 @@ If a proper list is supplied, it is treated as `(:tuple ...)` for this
 purpose. For dotted tuples, `value-of` includes the tail type as an additional
 union member (e.g., `(:tuple a b . c)` => `(or a b c)`).
 
+When combined with `(var SYMBOL)`, a type checker should first resolve
+`(var SYMBOL)` to its concrete type (for example, a tuple for a `defconst`
+list) and then apply `value-of` to that expanded type.
+
 Example (two-argument `or`):
 
 ```emacs-lisp
 (typespec #'or
   (:forall (a b)
     (function (a b) (value-of &args))))
+```
+
+Example with `&rest`:
+
+```emacs-lisp
+;; &args includes all args; &rest includes only the variadic tail.
+(typespec #'sum
+  (:forall (a)
+    (function (a &rest a) a)))
 ```
 
 ### `generalize` (widen literal types)
@@ -672,9 +717,11 @@ Example with `plist-key-of` / `plist-value-of`:
 
 If a `cl-defun` uses keyword parameter annotations such as
 `&key (:name string) (:age positive-int)`, a typespec consumer **may**
-reflect those annotations into the `&keys` plist type. This is intended
-as a convenience for implementation tools; it does not change runtime
-behavior.
+reflect those annotations into the `&keys` plist type. This syntax is
+**not** standard `cl-defun`; it is an example of a *typespec-aware
+annotation convention* that tools may support (for example, via
+`cl-defun` metadata or out-of-band annotations). It does not change
+runtime behavior.
 
 If a keyword parameter has no default value, a type checker should
 treat its type as `(or T nil)` *inside the function body*, because the
@@ -711,7 +758,9 @@ similar to PHPStan array-shapes.
   (:? :nickname string))
 ```
 
-Use `(:? KEY TYPE)` to mark an optional key.
+Keys are typically keywords, but any literal key is allowed (e.g. symbols
+or strings) if that matches the actual plist usage. Use `(:? KEY TYPE)`
+to mark an optional key.
 
 ## Container Types
 
@@ -720,7 +769,7 @@ Use `(:? KEY TYPE)` to mark an optional key.
 - `(sequence T)` — homogeneous sequence of `T`
 - `(cons A B)` — cons cell with `car` of `A` and `cdr` of `B`
 - `(hash-table K V)` — hash table mapping `K` to `V`
-- `(:alist K V)` — association list of key type `K` and value type `V`
+- `(:alist K V)` — association list of `(cons K V)` pairs
 - `(:plist K V)` — property list with key type `K` and value type `V`
 - `(:plist-of (KEY T) ...)` — plist with fixed keys (PHPStan array-shapes)
 
@@ -747,9 +796,12 @@ They are not part of the core syntax, but are useful for integration:
 - Native compilation — `subr-type` and `function-type` can provide inferred or
   declared function type specifiers (see `comp-function-type-spec`).
 
-Note: `string` can be treated as a sequence of character codes, i.e.
-`(sequence (fixnum 0 most-positive-fixnum))`, when a uniform sequence
-view is useful.
+Note: `string` is a sequence and can be treated as a sequence of
+character codes, i.e. `(sequence (fixnum 0 most-positive-fixnum))`.
+This is a **structural view** that is useful for sequence-processing
+code; it does not change the fact that `string` is also a distinct
+base type. Therefore, `(sequence integer)` **does include** strings,
+because strings are arrays whose elements are character codes.
 
 ### Sequences, Arrays, and Vectors
 
@@ -813,7 +865,10 @@ Optional shorthand (Elsa-style):
 - `sym` is shorthand for `(const sym)`
 
 Shorthands are convenient but can conflict with `cl-typep`’s atom usage.
-Use `(const ...)` in ambiguous contexts.
+Use `(const ...)` in ambiguous contexts. Type checkers should interpret
+bare symbols as **types**, not literal constants. That means `string`
+refers to the `string` type, while `(const string)` refers to the literal
+symbol `string`.
 
 ## Nullable Types
 
