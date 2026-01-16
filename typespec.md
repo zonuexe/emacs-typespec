@@ -117,6 +117,16 @@ Notes:
 
 This mirrors the `unknown` vs `any` distinction in TypeScript.
 
+Example usage:
+
+```emacs-lisp
+;; `unknown` for untrusted input; refine via a guard.
+(typespec #'stringp (function (unknown) (:guard! string)))
+
+;; `mixed` for dynamic values you intentionally pass through unchecked.
+(typespec #'eval (function (mixed) mixed))
+```
+
 ### Void
 
 - `void` — indicates a return value that must not be used, and *suggests
@@ -212,12 +222,40 @@ narrows to `(not T)`. In Psalm, the default `assert-if-true` is exclusive,
 and `=type` relaxes that; typespec keeps the TypeScript-style guard semantics
 for `:guard` and uses `:guard!` to make exclusivity explicit.
 
+Example: partial predicate (non-exhaustive), use `:guard`:
+
+```emacs-lisp
+(defun jp-postal-code-p (value)
+  "Return non-nil when VALUE is a Japanese postal code string."
+  (and (stringp value)
+       (string-match-p
+        (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end)
+        value)))
+
+(typespec #'jp-postal-code-p
+  (function (unknown)
+            (:guard (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end))))
+```
+
+Example: total predicate, use `:guard!`:
+
+```emacs-lisp
+(typespec #'stringp
+  (function (unknown) (:guard! string)))
+```
+
 ### Assertion Guards
 
 For assertion-style helpers that signal an error on failure and refine
 the argument on success, use `:assert` as the return type:
 
 ```emacs-lisp
+(defun assert-int (value)
+  "Signal an error unless VALUE is an integer; return VALUE."
+  (unless (integerp value)
+    (signal 'wrong-type-argument (list 'integerp value)))
+  value)
+
 (typespec #'assert-int (function (unknown) (:assert integer)))
 ```
 
@@ -475,6 +513,16 @@ Therefore, `(sequence T)` should be read as “either `(list T)` or an array of 
 When element type matters for arrays, use `(vector T)` or a more specific array
 type once it is introduced.
 
+Example usage:
+
+```emacs-lisp
+;; Accepts any sequence (list, vector, string, etc).
+(typespec #'seq-length (function ((sequence mixed)) integer))
+
+;; Requires a proper list, not a vector or string.
+(typespec #'car (function ((list mixed)) mixed))
+```
+
 ## Tuple Types
 
 Use `(:tuple T1 T2 T3)` for a fixed-length *proper list* tuple.
@@ -484,6 +532,18 @@ equivalent to `(cons T1 (cons T2 T3))`.
 
 If this dotted form proves too hard to read, we can add explicit
 keywords such as `:list-tuple` and `:cons-tuple` as aliases later.
+
+Example usage:
+
+```emacs-lisp
+;; Proper-list tuple of two elements.
+(typespec #'pair
+  (function (unknown unknown) (:tuple unknown unknown)))
+
+;; Cons-chain tuple: (a . (b . c)) where c is not necessarily a list.
+(typespec #'cons-chain
+  (function (unknown unknown unknown) (:tuple unknown unknown . unknown)))
+```
 
 ## Constant Types
 
