@@ -213,7 +213,10 @@ Example usage:
 The argument list uses a `defun`-style order: positional args, then
 `&optional`, then `&rest`, then `&keys`. `&keys` accepts either a plist
 shape (typically `(:plist-of ...)`) or a broader plist type such as
-`(:plist keyword mixed)`.
+`(:plist keyword mixed)`. This default is a convention used by checkers
+when no more specific plist shape is provided; implementations may allow
+configuration of the default, but callers should not rely on a custom
+default in type declarations.
 
 ## Polymorphism (Conceptual)
 
@@ -325,6 +328,14 @@ It is **not** evaluated at runtime; it is used only by type checkers to
 refine types for THEN/ELSE. Implementations should treat PRED as a pure
 expression with no side effects. A predicate that uses disallowed forms
 or operands is invalid and should be rejected.
+
+Evaluation model (for type checkers):
+- PRED is evaluated symbolically using the argument types (not values).
+- If the checker can prove PRED is true, it uses THEN; if it can prove
+  PRED is false, it uses ELSE; otherwise it should conservatively use
+  `(or THEN ELSE)`.
+- This is a compile-time/type-checking decision only; it does not affect
+  runtime behavior.
 
 Example:
 
@@ -519,10 +530,14 @@ Example usage:
 ### Variable types (`var`) and constant values
 
 `(var SYMBOL)` refers to the type of a Lisp variable by name.
+It is intended for **globally defined** variables (`defconst`, `defcustom`,
+or other global `defvar`-style bindings). It does **not** refer to lexical
+or dynamically bound local variables.
 
 - For `defconst` values, the variable is treated as a constant; a list
   of symbols is treated as a tuple of `const` values.
-- For `defcustom` values, use the declared `:type` if present.
+- For `defcustom` values, use the declared `:type` if present; this covers
+  values that can change at runtime or be dynamically bound.
 - Otherwise, the variable type is `unknown`.
 
 Example:
@@ -583,6 +598,36 @@ Example with `plist-key-of` / `plist-value-of`:
 ;; Return the values of a plist.
 (typespec #'plist-values
   (function (&keys) (list (plist-value-of &keys))))
+```
+
+### `cl-defun` keyword annotations and `&keys`
+
+If a `cl-defun` uses keyword parameter annotations such as
+`&key (:name string) (:age positive-int)`, a typespec consumer **may**
+reflect those annotations into the `&keys` plist type. This is intended
+as a convenience for implementation tools; it does not change runtime
+behavior.
+
+If a keyword parameter has no default value, a type checker should
+treat its type as `(or T nil)` *inside the function body*, because the
+caller may omit the keyword. This rule applies to analysis of the
+implementation, not to the external call signature.
+
+Implementation sketch:
+
+```emacs-lisp
+(cl-defun make-user (&key (name "Anonymous") (age 0))
+  (list :name name :age age))
+
+;; The tool derives:
+;; &keys => (:plist-of (:name string) (:age positive-int))
+(typespec #'make-user
+  (function (&keys (:plist-of
+                    (:name string)
+                    (:age positive-int)))
+            (:plist-of
+             (:name string)
+             (:age positive-int))))
 ```
 
 ### Keyed plists (array-shapes)
