@@ -158,9 +158,14 @@
   "Return non-nil if FORM is a record type."
   (eq form 'record))
 
+(defsubst typespec-eval--rx-type-p (form)
+  "Return non-nil if FORM is an `(rx ...)` type."
+  (and (consp form) (eq (car form) 'rx)))
+
 (defsubst typespec-eval--string-type-p (form)
   "Return non-nil if FORM is a string-like type."
   (or (eq form 'string)
+      (typespec-eval--rx-type-p form)
       (typespec-eval--non-empty-string-p form)))
 
 (defun typespec-eval--type-category (form)
@@ -247,6 +252,24 @@ Considers :guard-defined types via their base type."
 Considers :guard-defined types via their base type."
   (and-let* ((cat (typespec-eval--type-category-with-guard form)))
     (not (memq cat '(integer float number)))))
+
+(defun typespec-eval--non-integer-type-p (form)
+  "Return non-nil if FORM is a known non-integer type.
+Considers :guard-defined types via their base type."
+  (cond
+   ((typespec-eval--rx-type-p form) t)
+   ((and-let* ((cat (typespec-eval--type-category-with-guard form)))
+      (not (memq cat '(integer number string)))))
+   (t nil)))
+
+(defun typespec-eval--non-float-type-p (form)
+  "Return non-nil if FORM is a known non-float type.
+Considers :guard-defined types via their base type."
+  (cond
+   ((typespec-eval--rx-type-p form) t)
+   ((and-let* ((cat (typespec-eval--type-category-with-guard form)))
+      (not (memq cat '(float number string)))))
+   (t nil)))
 
 (defun typespec-eval--non-list-type-p (form)
   "Return non-nil if FORM is a known non-list type.
@@ -490,18 +513,29 @@ Also considers :guard-defined types via their base type."
       (typespec-eval--make-const nil))
      (t 'boolean))))
 
+(defun typespec-eval--eval-if-rx-narrowing (pred then else)
+  "Return an `(rx ...)` type when a `string-match-p` check narrows THEN.
+This matches `(if (string-match-p (rx ...) VAR) VAR nil)` patterns."
+  (pcase pred
+    (`(string-match-p ,rx ,var)
+     (when (and (equal then var)
+                (or (null else) (equal else '(const nil))))
+       (when (and (consp rx) (eq (car rx) 'rx))
+         rx)))))
+
 (defun typespec-eval--eval-if (pred then else)
   "Evaluate an `if` expression with PRED, THEN, and ELSE."
-  (let ((pred (typespec-eval--eval pred)))
-    (cond
-     ((typespec-eval--always-non-nil-p pred)
-      (typespec-eval--eval then))
-     ((typespec-eval--always-nil-p pred)
-      (typespec-eval--eval else))
-     (t
-      (typespec-eval--simplify-or
-       (list (typespec-eval--eval then)
-             (typespec-eval--eval else)))))))
+  (or (typespec-eval--eval-if-rx-narrowing pred then else)
+      (let ((pred (typespec-eval--eval pred)))
+        (cond
+         ((typespec-eval--always-non-nil-p pred)
+          (typespec-eval--eval then))
+         ((typespec-eval--always-nil-p pred)
+          (typespec-eval--eval else))
+         (t
+          (typespec-eval--simplify-or
+           (list (typespec-eval--eval then)
+                 (typespec-eval--eval else))))))))
 
 (defsubst typespec-eval--non-negative-int-type-p (form)
   "Return non-nil if FORM is a non-negative integer type."
@@ -1963,6 +1997,9 @@ If LIST-ONLY is non-nil, only handle list types."
      (list 'list (typespec-eval--eval type)))
     (`(vector ,type)
      (list 'vector (typespec-eval--eval type)))
+    (`(:forall ,_ ,body)
+     (typespec-eval--eval body))
+    (`(rx . ,_) form)
     (`(:alist ,key ,value)
      (list :alist (typespec-eval--eval key) (typespec-eval--eval value)))
     (`(:tuple . ,args)
@@ -2013,11 +2050,11 @@ If LIST-ONLY is non-nil, only handle list types."
     (`(integerp ,arg)
      (typespec-eval--eval-predicate arg #'integerp
                        #'typespec-eval--integer-type-p
-                       #'typespec-eval--float-type-p))
+                       #'typespec-eval--non-integer-type-p))
     (`(floatp ,arg)
      (typespec-eval--eval-predicate arg #'floatp
                        #'typespec-eval--float-type-p
-                       #'typespec-eval--integer-type-p))
+                       #'typespec-eval--non-float-type-p))
     (`(numberp ,arg)
      (typespec-eval--eval-predicate arg #'numberp
                        #'typespec-eval--number-type-p

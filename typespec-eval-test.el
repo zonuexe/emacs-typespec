@@ -1158,5 +1158,22 @@
     ;; Cleanup
     (function-put 'jp-postal-code-p 'typespec nil)))
 
+(ert-deftest typespec-eval-rx-type ()
+  "Test that `(rx ...)` is treated as a string-like type."
+  (should (equal (typespec-eval '(rx "a")) '(rx "a")))
+  (should (equal (typespec-eval '(stringp (rx "a"))) '(const t)))
+  (should (equal (typespec-eval '(integerp (rx "a"))) '(const nil))))
+
+(ert-deftest typespec-eval-rx-string-match-p-narrowing ()
+  "Test `string-match-p` narrowing to `(rx ...)` in conditional returns."
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+        (if (string-match-p (rx bos (+ digit) eos) a)
+            a
+          nil)))
+    '(rx bos (+ digit) eos))))
+
 (provide 'typespec-eval-test)
 ;;; typespec-eval-test.el ends here
