@@ -314,6 +314,31 @@ all map successfully, return a simplified `(or ...)` of results."
   (when (and (consp form) (memq (car form) '(list list+)))
     (cadr form)))
 
+(defun typespec-eval--alist-type-p (value)
+  "Return non-nil if VALUE is an alist type."
+  (and (consp value)
+       (eq (car value) :alist)
+       (consp (cdr value))
+       (consp (cddr value))
+       (null (cdddr value))))
+
+(defun typespec-eval--alist-key-type (value)
+  "Return the key type of an alist type VALUE."
+  (cadr value))
+
+(defun typespec-eval--alist-value-type (value)
+  "Return the value type of an alist type VALUE."
+  (caddr value))
+
+(defun typespec-eval--eval-tuple (args)
+  "Evaluate tuple ARGS in order, preserving dotted structure."
+  (cond
+   ((consp args)
+    (cons (typespec-eval--eval (car args))
+          (typespec-eval--eval-tuple (cdr args))))
+   ((null args) nil)
+   (t (typespec-eval--eval args))))
+
 (defun typespec-eval--eval-string-width (arg)
   "Evaluate a `string-width` expression over ARG."
   (let ((arg (typespec-eval--eval arg)))
@@ -1190,10 +1215,18 @@ ZERO-VALUE is used when ARGS is empty."
         (if (listp val)
             (typespec-eval--make-const (last val nval))
           'unknown)))
-     ((eq (car-safe list) 'list+)
-      (list 'list+ (cadr list)))
+    ((eq (car-safe list) 'list+)
+      (cond
+       ((null n) (list 'list+ (cadr list)))
+       ((and (integerp nval) (< nval 0)) (typespec-eval--make-const nil))
+       ((and (integerp nval) (= nval 0)) (typespec-eval--make-const nil))
+       ((and (integerp nval) (> nval 0)) (list 'list+ (cadr list)))
+       (t (list 'list (cadr list)))))
      ((eq (car-safe list) 'list)
-      (list 'list (cadr list)))
+      (cond
+       ((and (integerp nval) (< nval 0)) (typespec-eval--make-const nil))
+       ((and (integerp nval) (= nval 0)) (typespec-eval--make-const nil))
+       (t (list 'list (cadr list)))))
      (t 'unknown))))
 
 (defun typespec-eval--eval-butlast (list &optional n)
@@ -1207,9 +1240,71 @@ ZERO-VALUE is used when ARGS is empty."
         (if (listp val)
             (typespec-eval--make-const (butlast val nval))
           'unknown)))
-     ((and (eq (car-safe list) 'list+) (integerp nval) (zerop nval))
-      (list 'list+ (cadr list)))
-     ((memq (car-safe list) '(list list+))
+     ((eq (car-safe list) 'list+)
+      (cond
+       ((and (integerp nval) (<= nval 0)) (list 'list+ (cadr list)))
+       ((integerp nval) (list 'list (cadr list)))
+       (t (list 'list (cadr list)))))
+     ((eq (car-safe list) 'list)
+      (cond
+       ((and (integerp nval) (<= nval 0)) (list 'list (cadr list)))
+       ((integerp nval) (list 'list (cadr list)))
+       (t (list 'list (cadr list)))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-assoc (key alist &optional eqp)
+  "Evaluate an `assoc`/`assq` expression."
+  (let* ((key (typespec-eval--eval key))
+         (alist (typespec-eval--eval alist))
+         (key-type (typespec-eval--alist-key-type alist)))
+    (cond
+     ((and (typespec-eval--const-p key) (typespec-eval--const-p alist))
+      (let ((val (typespec-eval--const-value alist)))
+        (if (listp val)
+            (typespec-eval--make-const
+             (if eqp
+                 (assq (typespec-eval--const-value key) val)
+               (assoc (typespec-eval--const-value key) val)))
+          'unknown)))
+     ((typespec-eval--alist-type-p alist)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             (cons :tuple (cons key-type
+                                (typespec-eval--alist-value-type alist))))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-remove (elt sequence)
+  "Evaluate a `remove` expression."
+  (let ((elt (typespec-eval--eval elt))
+        (sequence (typespec-eval--eval sequence)))
+    (cond
+     ((and (typespec-eval--const-p elt) (typespec-eval--const-p sequence))
+      (let ((seq (typespec-eval--const-value sequence)))
+        (condition-case nil
+            (typespec-eval--make-const (remove (typespec-eval--const-value elt) seq))
+          (error 'unknown))))
+     ((eq (car-safe sequence) 'list)
+      (list 'list (cadr sequence)))
+     ((eq (car-safe sequence) 'list+)
+      (list 'list (cadr sequence)))
+     ((typespec-eval--string-type-p sequence) 'string)
+     ((and (consp sequence) (eq (car sequence) 'vector))
+      (list 'vector (cadr sequence)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-remq (elt list)
+  "Evaluate a `remq` expression."
+  (let ((elt (typespec-eval--eval elt))
+        (list (typespec-eval--eval list)))
+    (cond
+     ((and (typespec-eval--const-p elt) (typespec-eval--const-p list))
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const (remq (typespec-eval--const-value elt) val))
+          'unknown)))
+     ((eq (car-safe list) 'list)
+      (list 'list (cadr list)))
+     ((eq (car-safe list) 'list+)
       (list 'list (cadr list)))
      (t 'unknown))))
 
@@ -1588,6 +1683,10 @@ ZERO-VALUE is used when ARGS is empty."
      (list 'list (typespec-eval--eval type)))
     (`(vector ,type)
      (list 'vector (typespec-eval--eval type)))
+    (`(:alist ,key ,value)
+     (list :alist (typespec-eval--eval key) (typespec-eval--eval value)))
+    (`(:tuple . ,args)
+     (cons :tuple (typespec-eval--eval-tuple args)))
     (`(and . ,args)
      (typespec-eval--eval-and args))
     (`(not ,arg)
@@ -1667,6 +1766,14 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-last list (car rest)))
     (`(butlast ,list . ,rest)
      (typespec-eval--eval-butlast list (car rest)))
+    (`(assoc ,key ,alist)
+     (typespec-eval--eval-assoc key alist))
+    (`(assq ,key ,alist)
+     (typespec-eval--eval-assoc key alist t))
+    (`(remove ,elt ,sequence)
+     (typespec-eval--eval-remove elt sequence))
+    (`(remq ,elt ,list)
+     (typespec-eval--eval-remq elt list))
     (`(string-pad ,string ,length . ,rest)
      (typespec-eval--eval-string-pad string length (car rest) (cadr rest)))
     (`(string-remove-prefix ,prefix ,string)
