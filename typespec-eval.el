@@ -1151,6 +1151,68 @@ ZERO-VALUE is used when ARGS is empty."
       (list 'vector (cadr arg)))
      (t 'unknown))))
 
+(defun typespec-eval--eval-copy-sequence (sequence)
+  "Evaluate a `copy-sequence` expression."
+  (let ((sequence (typespec-eval--eval sequence)))
+    (cond
+     ((typespec-eval--const-p sequence)
+      (let ((val (typespec-eval--const-value sequence)))
+        (if (or (listp val) (vectorp val) (stringp val))
+            (typespec-eval--make-const (copy-sequence val))
+          'unknown)))
+     ((eq (car-safe sequence) 'list+) (list 'list+ (cadr sequence)))
+     ((eq (car-safe sequence) 'list) (list 'list (cadr sequence)))
+     ((typespec-eval--string-type-p sequence) 'string)
+     ((and (consp sequence) (eq (car sequence) 'vector))
+      (list 'vector (cadr sequence)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-safe-length (list)
+  "Evaluate a `safe-length` expression."
+  (let ((list (typespec-eval--eval list)))
+    (cond
+     ((typespec-eval--const-p list)
+      (typespec-eval--make-const (safe-length (typespec-eval--const-value list))))
+     ((eq (car-safe list) 'list+)
+      (typespec-eval--integer-range 1 '*))
+     ((eq (car-safe list) 'list)
+      (typespec-eval--integer-range 0 '*))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-last (list &optional n)
+  "Evaluate a `last` expression."
+  (let* ((list (typespec-eval--eval list))
+         (n (when n (typespec-eval--eval n)))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (typespec-eval--const-p list) (or (null n) (integerp nval)))
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const (last val nval))
+          'unknown)))
+     ((eq (car-safe list) 'list+)
+      (list 'list+ (cadr list)))
+     ((eq (car-safe list) 'list)
+      (list 'list (cadr list)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-butlast (list &optional n)
+  "Evaluate a `butlast` expression."
+  (let* ((list (typespec-eval--eval list))
+         (n (when n (typespec-eval--eval n)))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (typespec-eval--const-p list) (or (null n) (integerp nval)))
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const (butlast val nval))
+          'unknown)))
+     ((and (eq (car-safe list) 'list+) (integerp nval) (zerop nval))
+      (list 'list+ (cadr list)))
+     ((memq (car-safe list) '(list list+))
+      (list 'list (cadr list)))
+     (t 'unknown))))
+
 (defun typespec-eval--eval-minmax (args op)
   "Evaluate a MIN/MAX expression over ARGS using OP."
   (let ((args (mapcar #'typespec-eval--eval args)))
@@ -1597,6 +1659,14 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-aref array n))
     (`(reverse ,arg)
      (typespec-eval--eval-reverse arg))
+    (`(copy-sequence ,sequence)
+     (typespec-eval--eval-copy-sequence sequence))
+    (`(safe-length ,list)
+     (typespec-eval--eval-safe-length list))
+    (`(last ,list . ,rest)
+     (typespec-eval--eval-last list (car rest)))
+    (`(butlast ,list . ,rest)
+     (typespec-eval--eval-butlast list (car rest)))
     (`(string-pad ,string ,length . ,rest)
      (typespec-eval--eval-string-pad string length (car rest) (cadr rest)))
     (`(string-remove-prefix ,prefix ,string)
