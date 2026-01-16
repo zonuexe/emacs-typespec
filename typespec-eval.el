@@ -30,26 +30,26 @@
 (require 'seq)
 (require 'subr-x)
 
-(defun typespec-eval--const-p (form)
+(defsubst typespec-eval--const-p (form)
   "Return non-nil if FORM is a `(const VALUE)` expression."
   (and (consp form)
        (eq (car form) 'const)
        (consp (cdr form))
        (null (cddr form))))
 
-(defun typespec-eval--const-value (form)
+(defsubst typespec-eval--const-value (form)
   "Return the VALUE from a `(const VALUE)` FORM."
   (cadr form))
 
-(defun typespec-eval--make-const (value)
+(defsubst typespec-eval--make-const (value)
   "Return a `(const VALUE)` expression."
   (list 'const value))
 
-(defun typespec-eval--non-empty-string-expr ()
+(defsubst typespec-eval--non-empty-string-expr ()
   "Return the canonical non-empty string type expression."
   '(and string (not (const ""))))
 
-(defun typespec-eval--non-empty-string-p (form)
+(defsubst typespec-eval--non-empty-string-p (form)
   "Return non-nil if FORM is known to be a non-empty string."
   (cond
    ((and (typespec-eval--const-p form)
@@ -58,40 +58,40 @@
    ((equal form (typespec-eval--non-empty-string-expr)) t)
    (t nil)))
 
-(defun typespec-eval--always-nil-p (form)
+(defsubst typespec-eval--always-nil-p (form)
   "Return non-nil if FORM is known to be nil."
   (or (equal form '(const nil))
       (eq form 'null)))
 
-(defun typespec-eval--const-integer-value (form)
+(defsubst typespec-eval--const-integer-value (form)
   "Return integer value if FORM is a const integer, otherwise nil."
   (when (and (typespec-eval--const-p form)
              (integerp (typespec-eval--const-value form)))
     (typespec-eval--const-value form)))
 
-(defun typespec-eval--integer-range (low high)
+(defsubst typespec-eval--integer-range (low high)
   "Return an integer range type expression for LOW and HIGH."
   (list 'integer low high))
 
-(defun typespec-eval--integer-range-p (form)
+(defsubst typespec-eval--integer-range-p (form)
   "Return non-nil if FORM is an `(integer LOW HIGH)` range."
   (and (consp form)
        (eq (car form) 'integer)
        (consp (cdr form))
        (consp (cddr form))))
 
-(defun typespec-eval--integer-type-p (form)
+(defsubst typespec-eval--integer-type-p (form)
   "Return non-nil if FORM is an integer-like type."
   (or (memq form '(int integer fixnum bignum
                        positive-int non-negative-int
                        negative-int non-positive-int))
       (typespec-eval--integer-range-p form)))
 
-(defun typespec-eval--float-type-p (form)
+(defsubst typespec-eval--float-type-p (form)
   "Return non-nil if FORM is a float-like type."
   (memq form '(float positive-float negative-float)))
 
-(defun typespec-eval--number-type-p (form)
+(defsubst typespec-eval--number-type-p (form)
   "Return non-nil if FORM is a number-like type."
   (or (memq form '(number real integer float fixnum bignum
                        positive-int non-negative-int
@@ -99,19 +99,19 @@
                        positive-float negative-float))
       (typespec-eval--integer-range-p form)))
 
-(defun typespec-eval--positive-int-type-p (form)
+(defsubst typespec-eval--positive-int-type-p (form)
   "Return non-nil if FORM is a positive integer type."
   (or (eq form 'positive-int)
       (and (typespec-eval--integer-range-p form)
            (let ((low (cadr form)))
              (and (numberp low) (<= 1 low))))))
 
-(defun typespec-eval--list-type-p (form)
+(defsubst typespec-eval--list-type-p (form)
   "Return non-nil if FORM is a list type."
   (or (eq form 'list)
       (and (consp form) (memq (car form) '(list list+)))))
 
-(defun typespec-eval--always-non-nil-p (form)
+(defsubst typespec-eval--always-non-nil-p (form)
   "Return non-nil if FORM is known to be non-nil."
   (cond
    ((and (typespec-eval--const-p form)
@@ -130,7 +130,7 @@
     t)
    (t nil)))
 
-(defun typespec-eval--string-type-p (form)
+(defsubst typespec-eval--string-type-p (form)
   "Return non-nil if FORM is a string-like type."
   (or (eq form 'string)
       (typespec-eval--non-empty-string-p form)))
@@ -300,21 +300,21 @@ all map successfully, return a simplified `(or ...)` of results."
 (typespec-eval--constant-defun string-trim-right (stringp) :type string)
 (typespec-eval--constant-defun string-reverse (stringp) :type string)
 
-(defun typespec-eval--list-of-p (form type)
+(defsubst typespec-eval--list-of-p (form type)
   "Return non-nil if FORM is a list type of TYPE."
   (or (equal form (list 'list type))
       (equal form (list 'list+ type))))
 
-(defun typespec-eval--vector-of-p (form type)
+(defsubst typespec-eval--vector-of-p (form type)
   "Return non-nil if FORM is a vector type of TYPE."
   (equal form (list 'vector type)))
 
-(defun typespec-eval--list-elem-type (form)
+(defsubst typespec-eval--list-elem-type (form)
   "Return element type if FORM is a list type."
   (when (and (consp form) (memq (car form) '(list list+)))
     (cadr form)))
 
-(defun typespec-eval--alist-type-p (value)
+(defsubst typespec-eval--alist-type-p (value)
   "Return non-nil if VALUE is an alist type."
   (and (consp value)
        (eq (car value) :alist)
@@ -322,11 +322,11 @@ all map successfully, return a simplified `(or ...)` of results."
        (consp (cddr value))
        (null (cdddr value))))
 
-(defun typespec-eval--alist-key-type (value)
+(defsubst typespec-eval--alist-key-type (value)
   "Return the key type of an alist type VALUE."
   (cadr value))
 
-(defun typespec-eval--alist-value-type (value)
+(defsubst typespec-eval--alist-value-type (value)
   "Return the value type of an alist type VALUE."
   (caddr value))
 
@@ -1834,7 +1834,7 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-null arg))
     (`(const ,_) form)
     (`(integer ,low ,high)
-     (list 'integer low high))
+     (typespec-eval--integer-range low high))
     (`(eq ,lhs ,rhs)
      (typespec-eval--eval-eq lhs rhs))
     (`(equal ,lhs ,rhs)
