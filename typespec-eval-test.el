@@ -167,17 +167,6 @@
   (should (equal (typespec-eval '(zerop number))
                  'boolean)))
 
-(ert-deftest typespec-eval-log10 ()
-  (should (equal (typespec-eval '(log10 100))
-                 '(const 2.0)))
-  (should (equal (typespec-eval '(log10 number))
-                 'float)))
-
-(ert-deftest typespec-eval-lsh ()
-  (should (equal (typespec-eval '(lsh 2 1))
-                 '(const 4)))
-  (should (equal (typespec-eval '(lsh integer integer))
-                 'integer)))
 
 (ert-deftest typespec-eval-number-sequence ()
   (should (equal (typespec-eval '(number-sequence 1 3))
@@ -244,16 +233,10 @@
                  'boolean)))
 
 (ert-deftest typespec-eval-string-conversions ()
-  (should (equal (typespec-eval '(string-as-multibyte "a"))
-                 '(const "a")))
-  (should (equal (typespec-eval '(string-as-unibyte "a"))
-                 '(const "a")))
   (should (equal (typespec-eval '(string-to-multibyte "a"))
                  '(const "a")))
   (should (equal (typespec-eval '(string-to-unibyte "a"))
                  '(const "a")))
-  (should (equal (typespec-eval '(string-as-multibyte string))
-                 'string))
   (should (equal (typespec-eval '(string-to-unibyte string))
                  'string)))
 
@@ -436,12 +419,6 @@
                  '(and string (not (const "")))))
   (should (equal (typespec-eval '(substring "abc" 1 2))
                  '(const "b"))))
-
-(ert-deftest typespec-eval-string-reverse ()
-  (should (equal (typespec-eval '(string-reverse "abc"))
-                 '(const "cba")))
-  (should (equal (typespec-eval '(string-reverse string))
-                 'string)))
 
 (ert-deftest typespec-eval-string-trim-left-right ()
   (should (equal (typespec-eval '(string-trim-left "  foo"))

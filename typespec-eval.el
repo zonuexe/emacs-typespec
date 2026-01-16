@@ -298,7 +298,6 @@ all map successfully, return a simplified `(or ...)` of results."
 (typespec-eval--constant-defun string-trim (stringp) :type string)
 (typespec-eval--constant-defun string-trim-left (stringp) :type string)
 (typespec-eval--constant-defun string-trim-right (stringp) :type string)
-(typespec-eval--constant-defun string-reverse (stringp) :type string)
 
 (defsubst typespec-eval--list-of-p (form type)
   "Return non-nil if FORM is a list type of TYPE."
@@ -414,34 +413,6 @@ all map successfully, return a simplified `(or ...)` of results."
            (or (null start)
                (typespec-eval--integer-type-p start)))
       'boolean)
-     (t 'unknown))))
-
-(defun typespec-eval--eval-string-as-multibyte (string)
-  "Evaluate a `string-as-multibyte` expression."
-  (let ((string (typespec-eval--eval string)))
-    (cond
-     ((typespec-eval--const-p string)
-      (let ((val (typespec-eval--const-value string)))
-        (if (stringp val)
-            (typespec-eval--make-const (string-as-multibyte val))
-          'unknown)))
-     ((typespec-eval--non-empty-string-p string)
-      (typespec-eval--non-empty-string-expr))
-     ((typespec-eval--string-type-p string) 'string)
-     (t 'unknown))))
-
-(defun typespec-eval--eval-string-as-unibyte (string)
-  "Evaluate a `string-as-unibyte` expression."
-  (let ((string (typespec-eval--eval string)))
-    (cond
-     ((typespec-eval--const-p string)
-      (let ((val (typespec-eval--const-value string)))
-        (if (stringp val)
-            (typespec-eval--make-const (string-as-unibyte val))
-          'unknown)))
-     ((typespec-eval--non-empty-string-p string)
-      (typespec-eval--non-empty-string-expr))
-     ((typespec-eval--string-type-p string) 'string)
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-to-multibyte (string)
@@ -943,26 +914,6 @@ ZERO-VALUE is used when ARGS is empty."
 (typespec-eval--constant-defun zerop (numberp)
   :type-p typespec-eval--number-type-p
   :type-out boolean)
-(typespec-eval--constant-defun log10 (numberp)
-  :type-p typespec-eval--number-type-p
-  :type-out float)
-
-(defun typespec-eval--eval-lsh (value count)
-  "Evaluate an `lsh` expression."
-  (let ((value (typespec-eval--eval value))
-        (count (typespec-eval--eval count)))
-    (cond
-     ((and (typespec-eval--const-p value)
-           (typespec-eval--const-p count)
-           (integerp (typespec-eval--const-value value))
-           (integerp (typespec-eval--const-value count)))
-      (typespec-eval--make-const
-       (lsh (typespec-eval--const-value value)
-            (typespec-eval--const-value count))))
-     ((and (typespec-eval--integer-type-p value)
-           (typespec-eval--integer-type-p count))
-      'integer)
-     (t 'unknown))))
 
 (defun typespec-eval--eval-number-sequence (from &optional to inc)
   "Evaluate a `number-sequence` expression."
@@ -1855,8 +1806,6 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-string-trim-left arg))
     (`(string-trim-right ,arg)
      (typespec-eval--eval-string-trim-right arg))
-    (`(string-reverse ,arg)
-     (typespec-eval--eval-string-reverse arg))
     (`(string-width ,arg)
      (typespec-eval--eval-string-width arg))
     (`(string-lines ,string . ,rest)
@@ -1975,10 +1924,6 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-string-truncate-left string n))
     (`(string-match-p ,regexp ,string . ,rest)
      (typespec-eval--eval-string-match-p regexp string (car rest)))
-    (`(string-as-multibyte ,string)
-     (typespec-eval--eval-string-as-multibyte string))
-    (`(string-as-unibyte ,string)
-     (typespec-eval--eval-string-as-unibyte string))
     (`(string-to-multibyte ,string)
      (typespec-eval--eval-string-to-multibyte string))
     (`(string-to-unibyte ,string)
@@ -2021,12 +1966,8 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-logcount arg))
     (`(ash ,value ,count)
      (typespec-eval--eval-ash value count))
-    (`(lsh ,value ,count)
-     (typespec-eval--eval-lsh value count))
     (`(zerop ,arg)
      (typespec-eval--eval-zerop arg))
-    (`(log10 ,arg)
-     (typespec-eval--eval-log10 arg))
     (`(isnan ,arg)
      (typespec-eval--eval-isnan arg))
     (`(cl-signum ,arg)

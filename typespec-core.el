@@ -61,17 +61,17 @@
     memq member member-ignore-case
     assoc assq rassoc alist-get
     plist-get plist-member
-    log10 lsh zerop number-sequence
+    zerop number-sequence
     + - * / % mod 1+ 1- abs max min
     floor ceiling round truncate isnan cl-signum
     logand logior logxor lognot logcount ash
-    concat string-as-multibyte string-as-unibyte string-bytes
+    concat string-bytes
     string-chop-newline string-clean-whitespace string-distance
     string-equal string-equal-ignore-case string-greaterp string-lessp
     string-join string-limit string-lines string-match-p
     upcase downcase capitalize char-to-string make-string substring
     string-pad string-prefix-p string-remove-prefix string-remove-suffix
-    string-replace string-reverse string-search string-split string-suffix-p
+    string-replace string-search string-split string-suffix-p
     string-to-char string-to-list string-to-multibyte string-to-number
     string-to-unibyte string-to-vector string-trim string-trim-left
     string-trim-right string-truncate-left string-version-lessp
