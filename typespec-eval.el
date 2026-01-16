@@ -1273,6 +1273,74 @@ ZERO-VALUE is used when ARGS is empty."
                                 (typespec-eval--alist-value-type alist))))))
      (t 'unknown))))
 
+(defun typespec-eval--eval-assoc-default (key alist &optional test default)
+  "Evaluate an `assoc-default` expression."
+  (let* ((key (typespec-eval--eval key))
+         (alist (typespec-eval--eval alist))
+         (test (when test (typespec-eval--eval test)))
+         (default (when default (typespec-eval--eval default))))
+    (cond
+     ((and (typespec-eval--const-p key)
+           (typespec-eval--const-p alist)
+           (or (null test) (typespec-eval--const-p test))
+           (or (null default) (typespec-eval--const-p default)))
+      (let ((alist-val (typespec-eval--const-value alist)))
+        (if (listp alist-val)
+            (typespec-eval--make-const
+             (assoc-default (typespec-eval--const-value key)
+                            alist-val
+                            (when test (typespec-eval--const-value test))
+                            (when default (typespec-eval--const-value default))))
+          'unknown)))
+     ((typespec-eval--alist-type-p alist)
+      (let ((value-type (typespec-eval--alist-value-type alist)))
+        (if default
+            (typespec-eval--simplify-or (list default value-type))
+          (typespec-eval--simplify-or
+           (list (typespec-eval--make-const nil) value-type)))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-rassq (value alist)
+  "Evaluate a `rassq` expression."
+  (let* ((value (typespec-eval--eval value))
+         (alist (typespec-eval--eval alist)))
+    (cond
+     ((and (typespec-eval--const-p value) (typespec-eval--const-p alist))
+      (let ((alist-val (typespec-eval--const-value alist)))
+        (if (listp alist-val)
+            (typespec-eval--make-const (rassq (typespec-eval--const-value value)
+                                              alist-val))
+          'unknown)))
+     ((typespec-eval--alist-type-p alist)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             (cons :tuple (cons (typespec-eval--alist-key-type alist)
+                                (typespec-eval--alist-value-type alist))))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-assoc-delete-all (key alist &optional test)
+  "Evaluate an `assoc-delete-all`/`assq-delete-all` expression."
+  (let* ((key (typespec-eval--eval key))
+         (alist (typespec-eval--eval alist))
+         (test (when test (typespec-eval--eval test))))
+    (cond
+     ((and (typespec-eval--const-p key)
+           (typespec-eval--const-p alist)
+           (or (null test) (typespec-eval--const-p test) (symbolp test)))
+      (let ((alist-val (typespec-eval--const-value alist)))
+        (if (listp alist-val)
+            (typespec-eval--make-const
+             (assoc-delete-all (typespec-eval--const-value key)
+                               alist-val
+                               (cond
+                                ((null test) nil)
+                                ((typespec-eval--const-p test)
+                                 (typespec-eval--const-value test))
+                                (t test))))
+          'unknown)))
+     ((typespec-eval--alist-type-p alist) alist)
+     (t 'unknown))))
+
 (defun typespec-eval--eval-remove (elt sequence)
   "Evaluate a `remove` expression."
   (let ((elt (typespec-eval--eval elt))
@@ -1301,6 +1369,62 @@ ZERO-VALUE is used when ARGS is empty."
       (let ((val (typespec-eval--const-value list)))
         (if (listp val)
             (typespec-eval--make-const (remq (typespec-eval--const-value elt) val))
+          'unknown)))
+     ((eq (car-safe list) 'list)
+      (list 'list (cadr list)))
+     ((eq (car-safe list) 'list+)
+      (list 'list (cadr list)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-copy-tree (tree &optional vectors-and-records)
+  "Evaluate a `copy-tree` expression."
+  (let ((tree (typespec-eval--eval tree))
+        (vectors-and-records (when vectors-and-records
+                               (typespec-eval--eval vectors-and-records))))
+    (cond
+     ((and (typespec-eval--const-p tree)
+           (or (null vectors-and-records)
+               (typespec-eval--const-p vectors-and-records)))
+      (let ((val (typespec-eval--const-value tree)))
+        (condition-case nil
+            (typespec-eval--make-const
+             (copy-tree val
+                        (when vectors-and-records
+                          (typespec-eval--const-value vectors-and-records))))
+          (error 'unknown))))
+     ((memq (car-safe tree) '(list list+)) tree)
+     ((and (consp tree) (eq (car tree) 'vector))
+      (if vectors-and-records tree 'unknown))
+     (t tree))))
+
+(defun typespec-eval--eval-delete-dups (list)
+  "Evaluate a `delete-dups` expression."
+  (let ((list (typespec-eval--eval list)))
+    (cond
+     ((typespec-eval--const-p list)
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const (delete-dups (copy-sequence val)))
+          'unknown)))
+     ((eq (car-safe list) 'list)
+      (list 'list (cadr list)))
+     ((eq (car-safe list) 'list+)
+      (list 'list (cadr list)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-delete-consecutive-dups (list &optional circular)
+  "Evaluate a `delete-consecutive-dups` expression."
+  (let ((list (typespec-eval--eval list))
+        (circular (when circular (typespec-eval--eval circular))))
+    (cond
+     ((and (typespec-eval--const-p list)
+           (or (null circular) (typespec-eval--const-p circular)))
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const
+             (delete-consecutive-dups (copy-sequence val)
+                                      (when circular
+                                        (typespec-eval--const-value circular))))
           'unknown)))
      ((eq (car-safe list) 'list)
       (list 'list (cadr list)))
@@ -1770,6 +1894,20 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-assoc key alist))
     (`(assq ,key ,alist)
      (typespec-eval--eval-assoc key alist t))
+    (`(assoc-default ,key ,alist . ,rest)
+     (typespec-eval--eval-assoc-default key alist (car rest) (cadr rest)))
+    (`(rassq ,value ,alist)
+     (typespec-eval--eval-rassq value alist))
+    (`(assoc-delete-all ,key ,alist . ,rest)
+     (typespec-eval--eval-assoc-delete-all key alist (car rest)))
+    (`(assq-delete-all ,key ,alist)
+     (typespec-eval--eval-assoc-delete-all key alist 'eq))
+    (`(copy-tree ,tree . ,rest)
+     (typespec-eval--eval-copy-tree tree (car rest)))
+    (`(delete-dups ,list)
+     (typespec-eval--eval-delete-dups list))
+    (`(delete-consecutive-dups ,list . ,rest)
+     (typespec-eval--eval-delete-consecutive-dups list (car rest)))
     (`(remove ,elt ,sequence)
      (typespec-eval--eval-remove elt sequence))
     (`(remq ,elt ,list)
