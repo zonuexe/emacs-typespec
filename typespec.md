@@ -120,8 +120,8 @@ This mirrors the `unknown` vs `any` distinction in TypeScript.
 Example usage:
 
 ```emacs-lisp
-;; `unknown` for untrusted input; refine via a guard.
-(typespec #'stringp (function (unknown) (:guard! string)))
+;; `unknown` for untrusted input or values that must be refined.
+(typespec #'read (function (string) unknown))
 
 ;; `mixed` for dynamic values you intentionally pass through unchecked.
 (typespec #'eval (function (mixed) mixed))
@@ -222,27 +222,14 @@ narrows to `(not T)`. In Psalm, the default `assert-if-true` is exclusive,
 and `=type` relaxes that; typespec keeps the TypeScript-style guard semantics
 for `:guard` and uses `:guard!` to make exclusivity explicit.
 
-Example: partial predicate (non-exhaustive), use `:guard`:
-
-```emacs-lisp
-(defun jp-postal-code-p (value)
-  "Return non-nil when VALUE is a Japanese postal code string."
-  (and (stringp value)
-       (string-match-p
-        (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end)
-        value)))
-
-(typespec #'jp-postal-code-p
-  (function (unknown)
-            (:guard (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end))))
-```
-
 Example: total predicate, use `:guard!`:
 
 ```emacs-lisp
 (typespec #'stringp
   (function (unknown) (:guard! string)))
 ```
+
+For a partial predicate example, see `jp-postal-code-p` in the `rx` section.
 
 ### Assertion Guards
 
@@ -604,12 +591,6 @@ silent misinterpretation.
 ```emacs-lisp
 (typespec #'max
   (function ((or number marker) &rest (or number marker)) number))
-```
-
-### Type guard predicate
-
-```emacs-lisp
-(typespec #'stringp (function (unknown) (:guard string)))
 ```
 
 ### seq-map
