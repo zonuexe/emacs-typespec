@@ -298,6 +298,63 @@ all map successfully, return a simplified `(or ...)` of results."
 (typespec-eval--constant-defun string-trim-right (stringp) :type string)
 (typespec-eval--constant-defun string-reverse (stringp) :type string)
 
+(defun typespec-eval--list-of-p (form type)
+  "Return non-nil if FORM is a list type of TYPE."
+  (or (equal form (list 'list type))
+      (equal form (list 'list+ type))))
+
+(defun typespec-eval--eval-string-width (arg)
+  "Evaluate a `string-width` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-width val))
+          'unknown)))
+     ((typespec-eval--string-type-p arg)
+      (typespec-eval--integer-range 0 '*))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-lines (string &optional omit-nulls keep-newlines)
+  "Evaluate a `string-lines` expression."
+  (let* ((string (typespec-eval--eval string))
+         (omit-nulls (when omit-nulls (typespec-eval--eval omit-nulls)))
+         (keep-newlines (when keep-newlines (typespec-eval--eval keep-newlines)))
+         (sval (and (typespec-eval--const-p string)
+                    (typespec-eval--const-value string)))
+         (omit (and (typespec-eval--const-p omit-nulls)
+                    (typespec-eval--const-value omit-nulls)))
+         (keep (and (typespec-eval--const-p keep-newlines)
+                    (typespec-eval--const-value keep-newlines))))
+    (cond
+     ((and (stringp sval)
+           (or (null omit-nulls) (booleanp omit))
+           (or (null keep-newlines) (booleanp keep)))
+      (typespec-eval--make-const (string-lines sval omit keep)))
+     ((typespec-eval--string-type-p string)
+      '(list string))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-join (strings &optional separator)
+  "Evaluate a `string-join` expression."
+  (let* ((strings (typespec-eval--eval strings))
+         (separator (when separator (typespec-eval--eval separator)))
+         (sval (and (typespec-eval--const-p strings)
+                    (typespec-eval--const-value strings)))
+         (sep (and (typespec-eval--const-p separator)
+                   (typespec-eval--const-value separator))))
+    (cond
+     ((and (typespec-eval--const-p strings)
+           (listp sval)
+           (seq-every-p #'stringp sval)
+           (or (null separator) (stringp sep)))
+      (typespec-eval--make-const (string-join sval sep)))
+     ((or (typespec-eval--list-of-p strings 'string)
+          (typespec-eval--list-of-p strings (typespec-eval--non-empty-string-expr)))
+      'string)
+     (t 'unknown))))
+
 (defun typespec-eval--eval-abs (arg)
   "Evaluate an `abs` expression over ARG."
   (let ((arg (typespec-eval--eval arg)))
@@ -729,6 +786,12 @@ all map successfully, return a simplified `(or ...)` of results."
      (typespec-eval--eval-string-trim-right arg))
     (`(string-reverse ,arg)
      (typespec-eval--eval-string-reverse arg))
+    (`(string-width ,arg)
+     (typespec-eval--eval-string-width arg))
+    (`(string-lines ,string . ,rest)
+     (typespec-eval--eval-string-lines string (car rest) (cadr rest)))
+    (`(string-join ,strings . ,rest)
+     (typespec-eval--eval-string-join strings (car rest)))
     (`(abs ,arg)
      (typespec-eval--eval-abs arg))
     (`(floor ,arg)

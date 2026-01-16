@@ -127,6 +127,24 @@
   (should (equal (typespec-eval '(string-trim string))
                  'string)))
 
+(ert-deftest typespec-eval-string-width ()
+  (should (equal (typespec-eval '(string-width "ab"))
+                 '(const 2)))
+  (should (equal (typespec-eval '(string-width string))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-string-lines ()
+  (should (equal (typespec-eval '(string-lines "a\nb"))
+                 '(const ("a" "b"))))
+  (should (equal (typespec-eval '(string-lines string))
+                 '(list string))))
+
+(ert-deftest typespec-eval-string-join ()
+  (should (equal (typespec-eval '(string-join (const ("a" "b")) "-"))
+                 '(const "a-b")))
+  (should (equal (typespec-eval '(string-join (list string)))
+                 'string)))
+
 (ert-deftest typespec-eval-string-equal ()
   (should (equal (typespec-eval '(string-equal "a" "a"))
                  '(const t)))
