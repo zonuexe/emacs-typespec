@@ -7,6 +7,8 @@ and PHPStan experience with Lisp best practices.
 ## Specification
 
 The current draft lives in [**`typespec.md`**](typespec.md).
+Type-level evaluation semantics (guards, assertions, and conditional
+return types) are documented in [**`type-level-evaluation.md`**](type-level-evaluation.md).
 
 > [!WARNING]
 > This is an early draft with no full implementation yet. For now, [`ert-fnspec-check`][ert-fnspec-check] can be used for property-based checking.
