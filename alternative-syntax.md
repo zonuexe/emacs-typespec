@@ -43,9 +43,9 @@ Notes
 - `::` makes the return boundary visually prominent.
 - `(function ...)` makes it clearer that the expression is a function type.
 
-## Pros/Cons by Approach
+### Pros/Cons by Approach
 
-### 1) Top-level `::`, nested `(function ...)`
+#### 1) Top-level `::`, nested `(function ...)`
 
 Pros
 - Return boundary is obvious for top-level signatures.
@@ -55,7 +55,7 @@ Cons
 - Mixed notation requires an extra rule to learn.
 - `::` can still be confused with type annotation syntax.
 
-### 2) Top-level `(function ...)`, nested `::` shorthand
+#### 2) Top-level `(function ...)`, nested `::` shorthand
 
 Pros
 - Canonical form remains stable; shorthand is optional.
@@ -65,7 +65,7 @@ Cons
 - Readers must know that `::` is just a shorthand.
 - Argument modifiers like `&rest`/`&keys` can be harder to scan.
 
-### 3) `::` for both top-level and nested function types
+#### 3) `::` for both top-level and nested function types
 
 Pros
 - Consistent visual emphasis on return types.
@@ -74,3 +74,11 @@ Pros
 Cons
 - Higher risk of confusing `::` with annotation syntax.
 - Less explicit than `(function ...)` in dense type expressions.
+
+## Optional type shorthand
+
+Idea: shorthand for optional types as a replacement for `(or T nil)`.
+`(:optional T)` is not implemented and would be a higher-level alias.
+
+- `(? T)` — very short but may clash with the Lisp character literal reader.
+- `(:? T)` — consistent with `(:? KEY TYPE)` and more self-explanatory.

@@ -39,12 +39,14 @@ TYPE ::= symbol
        | (or TYPE...)
        | (and TYPE...)
        | (not TYPE)
+       | (diff TYPE TYPE)
        | (function (TYPE...) TYPE)
        | (function (TYPE...) (:guard TYPE))
        | (function (TYPE...) (:guard! TYPE))
        | (function (TYPE...) (:assert TYPE))
        | (if PRED TYPE TYPE)
        | (list TYPE)
+       | (list+ TYPE)
        | (vector TYPE)
        | (sequence TYPE)
        | (cons TYPE TYPE)
@@ -124,11 +126,35 @@ This mirrors the `unknown` vs `any` distinction in TypeScript.
   from `unknown`: `unknown` can be refined via guards, while `void`
   should not be consumed or cast.
 
+## What counts as a “type”
+
+Typespec recognizes several ways to define “a type”:
+
+- Predicate-defined types: names like `string` map to predicates such as
+  `stringp`. This also covers EIEIO classes via `(:class CLASS)` and
+  user-defined predicates via `:guard`/`:guard!` (e.g. `jp-postal-code-p`).
+- Structure-defined types: shapes such as `(:tuple ...)`, `(:alist K V)`,
+  `(:plist K V)`, `(:plist-of ...)`, `list`, `vector`, `sequence`, `cons`,
+  and `hash-table`.
+- Logical types: `(or ...)`, `(and ...)`, `(not ...)`, and `(diff ...)`.
+- Utility/meta types: `(const ...)`, `(rx ...)`, `(generalize ...)`,
+  `(generalize-signed ...)`, `(downcast ...)`, `(benevolent ...)`,
+  `(value-of ...)`, `(var ...)`, `(plist-key-of ...)`, `(plist-value-of ...)`,
+  `(list+ ...)`.
+
+Types that do not fit the predicate/structure/logical buckets are typically
+utility/meta types or higher-order function types:
+
+- Function types `(function ...)` are higher-order types; they are not defined
+  by a predicate or structure, but by input/output constraints.
+- `unknown`, `mixed`, `never`, and `void` are special-purpose meta types.
+
 ## Combinators (Type Theory Names)
 
 - `(or T1 T2 ...)` — union
 - `(and T1 T2 ...)` — intersection
 - `(not T)` — complement (relative to the current universe; use with care)
+- `(diff A B)` — difference (values in `A` that are not in `B`)
 
 These combinators intentionally use non-`:` forms to preserve `cl-typep`
 compatibility and because they are logical operators rather than base types.
@@ -140,6 +166,16 @@ compatibility and because they are logical operators rather than base types.
 Optional future extension:
 
 - keyword args or rest args, e.g. `(function (A1 &optional A2 &rest R) R)`.
+
+## Polymorphism (Conceptual)
+
+Typespec provides parametric polymorphism via `:forall`. This is the primary
+form of polymorphism in the system: type variables are introduced and then
+propagate through inputs and outputs without depending on values.
+
+Other helpers such as `generalize`, `generalize-signed`, `downcast`, and
+`value-of` are not polymorphism. They are pragmatic tools for widening,
+escaping, or refining types in dynamic code.
 
 ### Type Guards (TypeScript-style)
 
@@ -253,6 +289,11 @@ Example (two-argument `or`):
 broader, user-chosen target type (for example `integer` or `positive-int`).
 This is intended for cases where the strictest checker would infer a literal
 type, but you want to declare a usable supertype instead.
+
+### `list+` (non-empty list)
+
+`(list+ T)` describes a proper list with at least one element of type `T`.
+It is shorthand for `(cons T (list T))`.
 
 ### `generalize-signed` (sign-preserving widening)
 

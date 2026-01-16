@@ -84,6 +84,13 @@ When a function has a `typespec` annotation, a typed helper like
 
 This is a planned feature; the implementation does not exist yet.
 
+### Planned: typespec + resolver snapshots in tests
+
+`ert-fnspec-check-typed` can also use resolver snapshots embedded in the
+typespec record. This allows tests to resolve newer utility types even when
+the user's runtime typespec package is older, while still warning about
+baseline mismatches.
+
 ## Copyright
 
 This package is licensed under [GNU General Public License, version 3](https://www.gnu.org/licenses/gpl-3.0).
