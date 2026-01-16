@@ -213,10 +213,10 @@ Example usage:
 The argument list uses a `defun`-style order: positional args, then
 `&optional`, then `&rest`, then `&keys`. `&keys` accepts either a plist
 shape (typically `(:plist-of ...)`) or a broader plist type such as
-`(:plist keyword mixed)`. This default is a convention used by checkers
-when no more specific plist shape is provided; implementations may allow
-configuration of the default, but callers should not rely on a custom
-default in type declarations.
+`(:plist keyword mixed)`. This is a **conventional default** used by type
+checkers when no more specific plist shape is provided. It is not a language
+guarantee; implementations may allow configuration, but callers should not
+rely on a custom default in type declarations.
 
 ## Polymorphism (Conceptual)
 
@@ -336,6 +336,13 @@ Evaluation model (for type checkers):
   `(or THEN ELSE)`.
 - This is a compile-time/type-checking decision only; it does not affect
   runtime behavior.
+For `&keys`, a checker typically treats the presence/absence of a keyword
+as *unknown* unless it can prove a specific call site always supplies it.
+That means `plist-get` conditions will often fall back to the conservative
+`(or THEN ELSE)` result.
+PRED is evaluated **after** the argument types are established for the
+call site; it does not depend on the THEN/ELSE results, and checkers should
+not attempt a fixed-point iteration across branches.
 
 Example:
 
@@ -445,6 +452,12 @@ Example (failure case):
   (function (unknown) (generalize-signed unknown)))
 ```
 
+This mistake often appears when a function signature is written before the
+input type is known (e.g. you start with `unknown` and later plan to refine
+it), or when a dynamic value is passed through without an explicit cast.
+In those cases, either refine the input with a guard/assert first, or use
+`downcast` to document your intent explicitly.
+
 Example (use downcast to override):
 
 ```emacs-lisp
@@ -523,6 +536,12 @@ Example usage:
 ;; For example, multiplying a large fixnum can produce a bignum or
 ;; exceed a narrow `positive-int` expectation; `benevolent` avoids
 ;; flagging those cases as errors.
+;; This is different from `(or positive-int bignum)` because `benevolent`
+;; is a deliberate *policy* choice: it relaxes strict checking without
+;; committing to a precise widened union in every call site. In practice,
+;; the “right” union may vary by implementation (fixnum vs bignum ranges),
+;; or be too verbose to maintain; `benevolent` communicates intent without
+;; overfitting the type.
 (typespec #'times2
   (function (number) (benevolent positive-int)))
 ```
@@ -570,6 +589,9 @@ When using `&keys`, treat keyword arguments as a plist:
 - `&keys` is a plist type, typically `(:plist keyword mixed)` by default.
 - `(plist-key-of P)` returns the key type of plist `P`.
 - `(plist-value-of P)` returns the value type of plist `P`.
+Note: the `(:plist keyword mixed)` default is a convention used by type
+checkers when no more specific plist shape is provided. It is not a language
+guarantee.
 
 This allows a simple encoding of keyword-heavy functions without fixing
 exact key sets in the core syntax.
