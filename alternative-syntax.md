@@ -78,7 +78,8 @@ Cons
 ## Optional type shorthand
 
 Idea: shorthand for optional types as a replacement for `(or T nil)`.
-`(:optional T)` is not implemented and would be a higher-level alias.
+`(:optional T)` is not implemented; it would be a higher-level alias for
+`(or T nil)`.
 
 - `(? T)` — very short but may clash with the Lisp character literal reader.
 - `(:? T)` — consistent with `(:? KEY TYPE)` and more self-explanatory.

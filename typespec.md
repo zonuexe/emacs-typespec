@@ -159,6 +159,10 @@ utility/meta types or higher-order function types:
 These combinators intentionally use non-`:` forms to preserve `cl-typep`
 compatibility and because they are logical operators rather than base types.
 
+`(not T)` is shorthand for `(diff mixed T)` in non-conditional contexts.
+`(diff A B)` does not require `B` to be a subtype of `A`; it is simply
+“values in `A` that are not in `B`”.
+
 ## Function Types
 
 `(function (A1 A2 ...) R)` for functions with positional arguments.
@@ -190,6 +194,10 @@ This means the function returns a boolean value, and on success it
 refines the checked value to `string` in the caller context. The
 `boolean` return is implicit; you do not need to write it separately.
 
+The refined value is the **first positional argument** of the function.
+For multi-argument predicates, only the first argument is refined; the
+others are unchanged.
+
 Important: `:guard` narrows only on the *true* branch. The *false* branch
 does not imply the complement type, because many predicates are not total
 (e.g. a regexp-based predicate). If you want a predicate that partitions
@@ -214,7 +222,7 @@ the argument on success, use `:assert` as the return type:
 ```
 
 This means the function either signals an error or returns normally,
-and on the normal path the argument is treated as `integer`.
+and on the normal path the first argument is treated as `integer`.
 
 ### Conditional Return Types (Restricted)
 
@@ -275,6 +283,9 @@ Example:
 This allows types like `or` to describe “returns one of its arguments”
 without naming each argument.
 
+For dotted tuples, `value-of` includes the tail type as an additional
+union member (e.g., `(:tuple a b . c)` => `(or a b c)`).
+
 Example (two-argument `or`):
 
 ```emacs-lisp
@@ -326,6 +337,8 @@ is allowed, but for type usage it is recommended to anchor the whole string, for
 ```emacs-lisp
 (rx string-start (+ (any "0-9")) string-end)
 ```
+
+Non-string values never match; `(rx ...)` is a string subtype.
 
 Example: Japanese postal codes with a leading "〒" and no spaces:
 
