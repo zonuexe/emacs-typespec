@@ -218,6 +218,45 @@ checkers when no more specific plist shape is provided. It is not a language
 guarantee; implementations may allow configuration, but callers should not
 rely on a custom default in type declarations.
 
+### Variance (Subtyping)
+
+For function types, parameter types are **contravariant** and return types
+are **covariant**. Informally:
+
+`(function (A1 ... An) R)` is a subtype of `(function (B1 ... Bn) S)` when
+each `Bi` is a subtype of `Ai`, and `R` is a subtype of `S`.
+
+Example:
+
+```emacs-lisp
+;; Can accept any input, so it can stand in for a string-only function.
+(function (unknown) integer) <: (function (string) integer)
+```
+
+Concrete expectations:
+- `(function (positive-int) int)` is **not** a subtype of `(function (int) int)`.
+- `(function ((or int string)) int)` **is** a subtype of `(function (int) int)`.
+- `(function (int) (or int string))` is **not** a subtype of `(function (int) int)`.
+
+Tools that do not implement variance should treat function types as invariant.
+This follows the Liskov Substitution Principle: any value of the subtype
+must be safely usable wherever the supertype is expected. Contravariant
+parameters and covariant returns preserve that substitutability.
+
+For mutable containers (`list`, `vector`, `sequence`, `cons`, `hash-table`,
+`alist`, `plist`), treat element types as **invariant** by default, because
+mutation can break covariant assumptions.
+
+For `&optional` and `&rest`, treat omitted optional parameters as if they
+were supplied with `nil`, so their types are compared as `(or T nil)` in
+subtyping. `&rest` is contravariant in its element type.
+
+For `&keys`, subtyping should compare plist key sets structurally:
+required keys are contravariant in their value types, optional keys are
+contravariant when present, and additional keys in the subtype are allowed
+only if the supertype permits them (e.g. via a broader plist type).
+Implementations may conservatively fall back to invariance here.
+
 ## Polymorphism (Conceptual)
 
 Typespec provides parametric polymorphism via `:forall`. This is the primary
@@ -395,6 +434,11 @@ broader, user-chosen target type (for example `integer` or `positive-int`).
 This is intended for cases where the strictest checker would infer a literal
 type, but you want to declare a usable supertype instead.
 
+Design note: `generalize` is explicit because the desired target type is
+context-dependent (e.g. `integer` vs `positive-int`). In contrast,
+`generalize-signed` encodes a single, fixed widening rule for numeric
+literals, so it does not take an explicit target.
+
 Example usage:
 
 ```emacs-lisp
@@ -479,7 +523,9 @@ Example usage:
 `(downcast T TARGET)` explicitly treats `T` as `TARGET`. This is a deliberate
 escape hatch, similar to a type assertion, and should be used sparingly.
 Unlike `generalize`, `downcast` does not imply that `T` is a subtype of
-`TARGET`; it simply asserts that it should be treated as such.
+`TARGET`; it simply asserts that it should be treated as such. The name
+does not imply a direction (narrowing vs widening); it is an explicit
+cast that may be used to *narrow* or *widen* depending on context.
 
 Example usage:
 
