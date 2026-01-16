@@ -595,6 +595,10 @@
   (should (equal (typespec-eval '(assq-delete-all 1 (const ((1 . a) (2 . b)))))
                  '(const ((2 . b)))))
   (should (equal (typespec-eval '(assq-delete-all 1 (:alist integer string)))
+                 '(:alist integer string)))
+  (should (equal (typespec-eval '(rassq-delete-all (const a) (const ((1 . a) (2 . b)))))
+                 '(const ((2 . b)))))
+  (should (equal (typespec-eval '(rassq-delete-all (const a) (:alist integer string)))
                  '(:alist integer string))))
 
 (ert-deftest typespec-eval-copy-tree ()

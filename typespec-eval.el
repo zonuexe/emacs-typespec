@@ -1341,6 +1341,21 @@ ZERO-VALUE is used when ARGS is empty."
      ((typespec-eval--alist-type-p alist) alist)
      (t 'unknown))))
 
+(defun typespec-eval--eval-rassq-delete-all (value alist)
+  "Evaluate a `rassq-delete-all` expression."
+  (let* ((value (typespec-eval--eval value))
+         (alist (typespec-eval--eval alist)))
+    (cond
+     ((and (typespec-eval--const-p value)
+           (typespec-eval--const-p alist))
+      (let ((alist-val (typespec-eval--const-value alist)))
+        (if (listp alist-val)
+            (typespec-eval--make-const
+             (rassq-delete-all (typespec-eval--const-value value) alist-val))
+          'unknown)))
+     ((typespec-eval--alist-type-p alist) alist)
+     (t 'unknown))))
+
 (defun typespec-eval--eval-remove (elt sequence)
   "Evaluate a `remove` expression."
   (let ((elt (typespec-eval--eval elt))
@@ -1902,6 +1917,8 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-assoc-delete-all key alist (car rest)))
     (`(assq-delete-all ,key ,alist)
      (typespec-eval--eval-assoc-delete-all key alist 'eq))
+    (`(rassq-delete-all ,value ,alist)
+     (typespec-eval--eval-rassq-delete-all value alist))
     (`(copy-tree ,tree . ,rest)
      (typespec-eval--eval-copy-tree tree (car rest)))
     (`(delete-dups ,list)
