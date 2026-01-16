@@ -305,6 +305,15 @@ all map successfully, return a simplified `(or ...)` of results."
   (or (equal form (list 'list type))
       (equal form (list 'list+ type))))
 
+(defun typespec-eval--vector-of-p (form type)
+  "Return non-nil if FORM is a vector type of TYPE."
+  (equal form (list 'vector type)))
+
+(defun typespec-eval--list-elem-type (form)
+  "Return element type if FORM is a list type."
+  (when (and (consp form) (memq (car form) '(list list+)))
+    (cadr form)))
+
 (defun typespec-eval--eval-string-width (arg)
   "Evaluate a `string-width` expression over ARG."
   (let ((arg (typespec-eval--eval arg)))
@@ -1006,6 +1015,142 @@ ZERO-VALUE is used when ARGS is empty."
      ((typespec-eval--number-type-p arg) 'number)
      (t 'unknown))))
 
+(defun typespec-eval--eval-car (arg)
+  "Evaluate a `car` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (listp val)
+            (typespec-eval--make-const (car val))
+          'unknown)))
+     ((eq (car-safe arg) 'list+)
+      (cadr arg))
+     ((eq (car-safe arg) 'list)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil) (cadr arg))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-cdr (arg)
+  "Evaluate a `cdr` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (listp val)
+            (typespec-eval--make-const (cdr val))
+          'unknown)))
+     ((memq (car-safe arg) '(list list+))
+      (list 'list (cadr arg)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-car-safe (arg)
+  "Evaluate a `car-safe` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (typespec-eval--make-const (car-safe val))))
+     ((eq (car-safe arg) 'list+)
+      (cadr arg))
+     ((eq (car-safe arg) 'list)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil) (cadr arg))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-cdr-safe (arg)
+  "Evaluate a `cdr-safe` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (typespec-eval--make-const (cdr-safe val))))
+     ((memq (car-safe arg) '(list list+))
+      (list 'list (cadr arg)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-nth (n list)
+  "Evaluate an `nth` expression."
+  (let* ((n (typespec-eval--eval n))
+         (list (typespec-eval--eval list))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (typespec-eval--const-p list) (integerp nval))
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const (nth nval val))
+          'unknown)))
+     ((typespec-eval--list-elem-type list)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             (typespec-eval--list-elem-type list))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-nthcdr (n list)
+  "Evaluate an `nthcdr` expression."
+  (let* ((n (typespec-eval--eval n))
+         (list (typespec-eval--eval list))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (typespec-eval--const-p list) (integerp nval))
+      (let ((val (typespec-eval--const-value list)))
+        (if (listp val)
+            (typespec-eval--make-const (nthcdr nval val))
+          'unknown)))
+     ((typespec-eval--list-elem-type list)
+      (list 'list (typespec-eval--list-elem-type list)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-elt (sequence n)
+  "Evaluate an `elt` expression."
+  (let* ((sequence (typespec-eval--eval sequence))
+         (n (typespec-eval--eval n))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (typespec-eval--const-p sequence) (integerp nval))
+      (let ((val (typespec-eval--const-value sequence)))
+        (condition-case nil
+            (typespec-eval--make-const (elt val nval))
+          (args-out-of-range 'unknown))))
+     ((typespec-eval--string-type-p sequence) 'integer)
+     ((typespec-eval--list-elem-type sequence) (typespec-eval--list-elem-type sequence))
+     ((typespec-eval--vector-of-p sequence 'integer) 'integer)
+     ((and (consp sequence) (eq (car sequence) 'vector))
+      (cadr sequence))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-aref (array n)
+  "Evaluate an `aref` expression."
+  (let* ((array (typespec-eval--eval array))
+         (n (typespec-eval--eval n))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (typespec-eval--const-p array) (integerp nval))
+      (let ((val (typespec-eval--const-value array)))
+        (condition-case nil
+            (typespec-eval--make-const (aref val nval))
+          (args-out-of-range 'unknown))))
+     ((typespec-eval--string-type-p array) 'integer)
+     ((and (consp array) (eq (car array) 'vector))
+      (cadr array))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-reverse (arg)
+  "Evaluate a `reverse` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (or (listp val) (vectorp val) (stringp val))
+            (typespec-eval--make-const (reverse val))
+          'unknown)))
+     ((eq (car-safe arg) 'list+) (list 'list+ (cadr arg)))
+     ((eq (car-safe arg) 'list) (list 'list (cadr arg)))
+     ((typespec-eval--string-type-p arg) 'string)
+     ((and (consp arg) (eq (car arg) 'vector))
+      (list 'vector (cadr arg)))
+     (t 'unknown))))
+
 (defun typespec-eval--eval-minmax (args op)
   "Evaluate a MIN/MAX expression over ARGS using OP."
   (let ((args (mapcar #'typespec-eval--eval args)))
@@ -1379,6 +1524,8 @@ ZERO-VALUE is used when ARGS is empty."
      (list 'list+ (typespec-eval--eval type)))
     (`(list ,type)
      (list 'list (typespec-eval--eval type)))
+    (`(vector ,type)
+     (list 'vector (typespec-eval--eval type)))
     (`(and . ,args)
      (typespec-eval--eval-and args))
     (`(not ,arg)
@@ -1432,6 +1579,24 @@ ZERO-VALUE is used when ARGS is empty."
      (typespec-eval--eval-string-bytes arg))
     (`(substring ,string ,start . ,rest)
      (typespec-eval--eval-substring string start (car rest)))
+    (`(car ,arg)
+     (typespec-eval--eval-car arg))
+    (`(cdr ,arg)
+     (typespec-eval--eval-cdr arg))
+    (`(car-safe ,arg)
+     (typespec-eval--eval-car-safe arg))
+    (`(cdr-safe ,arg)
+     (typespec-eval--eval-cdr-safe arg))
+    (`(nth ,n ,list)
+     (typespec-eval--eval-nth n list))
+    (`(nthcdr ,n ,list)
+     (typespec-eval--eval-nthcdr n list))
+    (`(elt ,sequence ,n)
+     (typespec-eval--eval-elt sequence n))
+    (`(aref ,array ,n)
+     (typespec-eval--eval-aref array n))
+    (`(reverse ,arg)
+     (typespec-eval--eval-reverse arg))
     (`(string-pad ,string ,length . ,rest)
      (typespec-eval--eval-string-pad string length (car rest) (cadr rest)))
     (`(string-remove-prefix ,prefix ,string)
