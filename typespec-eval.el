@@ -352,7 +352,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-lines (string &optional omit-nulls keep-newlines)
-  "Evaluate a `string-lines` expression."
+  "Evaluate a `string-lines` expression for STRING, OMIT-NULLS, and KEEP-NEWLINES."
   (let* ((string (typespec-eval--eval string))
          (omit-nulls (when omit-nulls (typespec-eval--eval omit-nulls)))
          (keep-newlines (when keep-newlines (typespec-eval--eval keep-newlines)))
@@ -372,7 +372,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-join (strings &optional separator)
-  "Evaluate a `string-join` expression."
+  "Evaluate a `string-join` expression for STRINGS and SEPARATOR."
   (let* ((strings (typespec-eval--eval strings))
          (separator (when separator (typespec-eval--eval separator)))
          (sval (and (typespec-eval--const-p strings)
@@ -391,7 +391,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-match-p (regexp string &optional start)
-  "Evaluate a `string-match-p` expression."
+  "Evaluate a `string-match-p` expression for REGEXP, STRING, and START."
   (let ((regexp (typespec-eval--eval regexp))
         (string (typespec-eval--eval string))
         (start (when start (typespec-eval--eval start))))
@@ -416,7 +416,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-to-multibyte (string)
-  "Evaluate a `string-to-multibyte` expression."
+  "Evaluate a `string-to-multibyte` expression for STRING."
   (let ((string (typespec-eval--eval string)))
     (cond
      ((typespec-eval--const-p string)
@@ -430,7 +430,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-to-unibyte (string)
-  "Evaluate a `string-to-unibyte` expression."
+  "Evaluate a `string-to-unibyte` expression for STRING."
   (let ((string (typespec-eval--eval string)))
     (cond
      ((typespec-eval--const-p string)
@@ -444,7 +444,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-chop-newline (string)
-  "Evaluate a `string-chop-newline` expression."
+  "Evaluate a `string-chop-newline` expression for STRING."
   (let ((string (typespec-eval--eval string)))
     (cond
      ((typespec-eval--const-p string)
@@ -456,7 +456,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-clean-whitespace (string)
-  "Evaluate a `string-clean-whitespace` expression."
+  "Evaluate a `string-clean-whitespace` expression for STRING."
   (let ((string (typespec-eval--eval string)))
     (cond
      ((typespec-eval--const-p string)
@@ -468,7 +468,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-limit (string n)
-  "Evaluate a `string-limit` expression."
+  "Evaluate a `string-limit` expression for STRING and N."
   (let* ((string (typespec-eval--eval string))
          (n (typespec-eval--eval n))
          (sval (and (typespec-eval--const-p string)
@@ -483,7 +483,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-distance (lhs rhs)
-  "Evaluate a `string-distance` expression."
+  "Evaluate a `string-distance` expression for LHS and RHS."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
@@ -500,7 +500,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-char-to-string (char)
-  "Evaluate a `char-to-string` expression."
+  "Evaluate a `char-to-string` expression for CHAR."
   (let ((char (typespec-eval--eval char)))
     (cond
      ((typespec-eval--const-p char)
@@ -513,7 +513,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-make-string (length char)
-  "Evaluate a `make-string` expression."
+  "Evaluate a `make-string` expression for LENGTH and CHAR."
   (let* ((length (typespec-eval--eval length))
          (char (typespec-eval--eval char))
          (len (typespec-eval--const-integer-value length))
@@ -530,7 +530,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-version-lessp (lhs rhs)
-  "Evaluate a `string-version-lessp` expression."
+  "Evaluate a `string-version-lessp` expression for LHS and RHS."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
@@ -547,7 +547,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-search (needle haystack &optional start)
-  "Evaluate a `string-search` expression."
+  "Evaluate a `string-search` expression for NEEDLE, HAYSTACK, and START."
   (let ((needle (typespec-eval--eval needle))
         (haystack (typespec-eval--eval haystack))
         (start (when start (typespec-eval--eval start))))
@@ -572,7 +572,8 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-split (string &optional separators omit-nulls trim)
-  "Evaluate a `string-split` expression."
+  "Evaluate a `string-split` expression.
+STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
   (let* ((string (typespec-eval--eval string))
          (separators (when separators (typespec-eval--eval separators)))
          (omit-nulls (when omit-nulls (typespec-eval--eval omit-nulls)))
@@ -601,7 +602,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-replace (from to string)
-  "Evaluate a `string-replace` expression."
+  "Evaluate a `string-replace` expression for FROM, TO, and STRING."
   (let ((from (typespec-eval--eval from))
         (to (typespec-eval--eval to))
         (string (typespec-eval--eval string)))
@@ -623,7 +624,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-truncate-left (string n)
-  "Evaluate a `string-truncate-left` expression."
+  "Evaluate a `string-truncate-left` expression for STRING and N."
   (let* ((string (typespec-eval--eval string))
          (n (typespec-eval--eval n))
          (sval (and (typespec-eval--const-p string)
@@ -638,7 +639,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-suffix-p (suffix string &optional ignore-case)
-  "Evaluate a `string-suffix-p` expression."
+  "Evaluate a `string-suffix-p` expression for SUFFIX, STRING, and IGNORE-CASE."
   (let ((suffix (typespec-eval--eval suffix))
         (string (typespec-eval--eval string))
         (ignore-case (when ignore-case (typespec-eval--eval ignore-case))))
@@ -675,7 +676,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-lessp (lhs rhs)
-  "Evaluate a `string-lessp` expression."
+  "Evaluate a `string-lessp` expression for LHS and RHS."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
@@ -706,7 +707,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-greaterp (lhs rhs)
-  "Evaluate a `string-greaterp` expression."
+  "Evaluate a `string-greaterp` expression for LHS and RHS."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
@@ -737,7 +738,7 @@ all map successfully, return a simplified `(or ...)` of results."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-equal-ignore-case (lhs rhs)
-  "Evaluate a `string-equal-ignore-case` expression."
+  "Evaluate a `string-equal-ignore-case` expression for LHS and RHS."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
@@ -889,7 +890,7 @@ ZERO-VALUE is used when ARGS is empty."
   (typespec-eval--eval-integer-variadic args #'logxor 0))
 
 (defun typespec-eval--eval-ash (value count)
-  "Evaluate an `ash` expression."
+  "Evaluate an `ash` expression for VALUE and COUNT."
   (let ((value (typespec-eval--eval value))
         (count (typespec-eval--eval count)))
     (cond
@@ -916,7 +917,7 @@ ZERO-VALUE is used when ARGS is empty."
   :type-out boolean)
 
 (defun typespec-eval--eval-number-sequence (from &optional to inc)
-  "Evaluate a `number-sequence` expression."
+  "Evaluate a `number-sequence` expression for FROM, TO, and INC."
   (let* ((from (typespec-eval--eval from))
          (to (when to (typespec-eval--eval to)))
          (inc (when inc (typespec-eval--eval inc)))
@@ -1046,7 +1047,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-nth (n list)
-  "Evaluate an `nth` expression."
+  "Evaluate an `nth` expression for N and LIST."
   (let* ((n (typespec-eval--eval n))
          (list (typespec-eval--eval list))
          (nval (typespec-eval--const-integer-value n)))
@@ -1063,7 +1064,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-nthcdr (n list)
-  "Evaluate an `nthcdr` expression."
+  "Evaluate an `nthcdr` expression for N and LIST."
   (let* ((n (typespec-eval--eval n))
          (list (typespec-eval--eval list))
          (nval (typespec-eval--const-integer-value n)))
@@ -1078,7 +1079,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-elt (sequence n)
-  "Evaluate an `elt` expression."
+  "Evaluate an `elt` expression for SEQUENCE and N."
   (let* ((sequence (typespec-eval--eval sequence))
          (n (typespec-eval--eval n))
          (nval (typespec-eval--const-integer-value n)))
@@ -1096,7 +1097,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-aref (array n)
-  "Evaluate an `aref` expression."
+  "Evaluate an `aref` expression for ARRAY and N."
   (let* ((array (typespec-eval--eval array))
          (n (typespec-eval--eval n))
          (nval (typespec-eval--const-integer-value n)))
@@ -1128,7 +1129,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-copy-sequence (sequence)
-  "Evaluate a `copy-sequence` expression."
+  "Evaluate a `copy-sequence` expression for SEQUENCE."
   (let ((sequence (typespec-eval--eval sequence)))
     (cond
      ((typespec-eval--const-p sequence)
@@ -1144,7 +1145,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-safe-length (list)
-  "Evaluate a `safe-length` expression."
+  "Evaluate a `safe-length` expression for LIST."
   (let ((list (typespec-eval--eval list)))
     (cond
      ((typespec-eval--const-p list)
@@ -1156,7 +1157,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-last (list &optional n)
-  "Evaluate a `last` expression."
+  "Evaluate a `last` expression for LIST and N."
   (let* ((list (typespec-eval--eval list))
          (n (when n (typespec-eval--eval n)))
          (nval (typespec-eval--const-integer-value n)))
@@ -1181,7 +1182,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-butlast (list &optional n)
-  "Evaluate a `butlast` expression."
+  "Evaluate a `butlast` expression for LIST and N."
   (let* ((list (typespec-eval--eval list))
          (n (when n (typespec-eval--eval n)))
          (nval (typespec-eval--const-integer-value n)))
@@ -1204,7 +1205,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-assoc (key alist &optional eqp)
-  "Evaluate an `assoc`/`assq` expression."
+  "Evaluate an `assoc`/`assq` expression for KEY, ALIST, and EQP."
   (let* ((key (typespec-eval--eval key))
          (alist (typespec-eval--eval alist))
          (key-type (typespec-eval--alist-key-type alist)))
@@ -1225,7 +1226,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-assoc-default (key alist &optional test default)
-  "Evaluate an `assoc-default` expression."
+  "Evaluate an `assoc-default` expression for KEY, ALIST, TEST, and DEFAULT."
   (let* ((key (typespec-eval--eval key))
          (alist (typespec-eval--eval alist))
          (test (when test (typespec-eval--eval test)))
@@ -1252,7 +1253,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-rassq (value alist)
-  "Evaluate a `rassq` expression."
+  "Evaluate a `rassq` expression for VALUE and ALIST."
   (let* ((value (typespec-eval--eval value))
          (alist (typespec-eval--eval alist)))
     (cond
@@ -1270,7 +1271,8 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-assoc-delete-all (key alist &optional test)
-  "Evaluate an `assoc-delete-all`/`assq-delete-all` expression."
+  "Evaluate an `assoc-delete-all`/`assq-delete-all` expression.
+KEY, ALIST, and TEST are evaluated."
   (let* ((key (typespec-eval--eval key))
          (alist (typespec-eval--eval alist))
          (test (when test (typespec-eval--eval test))))
@@ -1293,7 +1295,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-rassq-delete-all (value alist)
-  "Evaluate a `rassq-delete-all` expression."
+  "Evaluate a `rassq-delete-all` expression for VALUE and ALIST."
   (let* ((value (typespec-eval--eval value))
          (alist (typespec-eval--eval alist)))
     (cond
@@ -1308,7 +1310,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-remove (elt sequence)
-  "Evaluate a `remove` expression."
+  "Evaluate a `remove` expression for ELT and SEQUENCE."
   (let ((elt (typespec-eval--eval elt))
         (sequence (typespec-eval--eval sequence)))
     (cond
@@ -1327,7 +1329,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-remq (elt list)
-  "Evaluate a `remq` expression."
+  "Evaluate a `remq` expression for ELT and LIST."
   (let ((elt (typespec-eval--eval elt))
         (list (typespec-eval--eval list)))
     (cond
@@ -1343,7 +1345,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-copy-tree (tree &optional vectors-and-records)
-  "Evaluate a `copy-tree` expression."
+  "Evaluate a `copy-tree` expression for TREE and VECTORS-AND-RECORDS."
   (let ((tree (typespec-eval--eval tree))
         (vectors-and-records (when vectors-and-records
                                (typespec-eval--eval vectors-and-records))))
@@ -1364,7 +1366,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t tree))))
 
 (defun typespec-eval--eval-delete-dups (list)
-  "Evaluate a `delete-dups` expression."
+  "Evaluate a `delete-dups` expression for LIST."
   (let ((list (typespec-eval--eval list)))
     (cond
      ((typespec-eval--const-p list)
@@ -1379,7 +1381,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-delete-consecutive-dups (list &optional circular)
-  "Evaluate a `delete-consecutive-dups` expression."
+  "Evaluate a `delete-consecutive-dups` expression for LIST and CIRCULAR."
   (let ((list (typespec-eval--eval list))
         (circular (when circular (typespec-eval--eval circular))))
     (cond
@@ -1491,7 +1493,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-pad (string length &optional padding start)
-  "Evaluate a `string-pad` expression."
+  "Evaluate a `string-pad` expression for STRING, LENGTH, PADDING, and START."
   (let* ((string (typespec-eval--eval string))
          (length (typespec-eval--eval length))
          (padding (when padding (typespec-eval--eval padding)))
@@ -1517,7 +1519,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-remove-prefix (prefix string)
-  "Evaluate a `string-remove-prefix` expression."
+  "Evaluate a `string-remove-prefix` expression for PREFIX and STRING."
   (let ((prefix (typespec-eval--eval prefix))
         (string (typespec-eval--eval string)))
     (cond
@@ -1534,7 +1536,7 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-remove-suffix (suffix string)
-  "Evaluate a `string-remove-suffix` expression."
+  "Evaluate a `string-remove-suffix` expression for SUFFIX and STRING."
   (let ((suffix (typespec-eval--eval suffix))
         (string (typespec-eval--eval string)))
     (cond
