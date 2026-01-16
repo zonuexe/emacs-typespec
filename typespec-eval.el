@@ -814,35 +814,6 @@ ZERO-VALUE is used when ARGS is empty."
      ((typespec-eval--number-type-p arg) 'boolean)
      (t 'unknown))))
 
-(defun typespec-eval--eval-car (arg)
-  "Evaluate a `car` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
-    (cond
-     ((typespec-eval--const-p arg)
-      (let ((val (typespec-eval--const-value arg)))
-        (if (listp val)
-            (typespec-eval--make-const (car val))
-          'unknown)))
-     ((eq (car-safe arg) 'list+)
-      (cadr arg))
-     ((eq (car-safe arg) 'list)
-      (typespec-eval--simplify-or
-       (list (typespec-eval--make-const nil) (cadr arg))))
-     (t 'unknown))))
-
-(defun typespec-eval--eval-cdr (arg)
-  "Evaluate a `cdr` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
-    (cond
-     ((typespec-eval--const-p arg)
-      (let ((val (typespec-eval--const-value arg)))
-        (if (listp val)
-            (typespec-eval--make-const (cdr val))
-          'unknown)))
-     ((memq (car-safe arg) '(list list+))
-      (list 'list (cadr arg)))
-     (t 'unknown))))
-
 (defun typespec-eval--eval-car-safe (arg)
   "Evaluate a `car-safe` expression over ARG."
   (let ((arg (typespec-eval--eval arg)))
@@ -869,7 +840,8 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-nth (n list)
-  "Evaluate an `nth` expression for N and LIST."
+  "Evaluate an `nth` expression for N and LIST.
+When N is 0, behaves like `car` (including special handling for `list+`)."
   (let* ((n (typespec-eval--eval n))
          (list (typespec-eval--eval list))
          (nval (typespec-eval--const-integer-value n)))
@@ -879,6 +851,9 @@ ZERO-VALUE is used when ARGS is empty."
         (if (listp val)
             (typespec-eval--make-const (nth nval val))
           'unknown)))
+     ((and (integerp nval) (= nval 0) (eq (car-safe list) 'list+))
+      ;; For nth 0 on list+, return element type directly (no nil)
+      (cadr list))
      ((typespec-eval--list-elem-type list)
       (typespec-eval--simplify-or
        (list (typespec-eval--make-const nil)
@@ -886,7 +861,8 @@ ZERO-VALUE is used when ARGS is empty."
      (t 'unknown))))
 
 (defun typespec-eval--eval-nthcdr (n list)
-  "Evaluate an `nthcdr` expression for N and LIST."
+  "Evaluate an `nthcdr` expression for N and LIST.
+When N is 1, behaves like `cdr`."
   (let* ((n (typespec-eval--eval n))
          (list (typespec-eval--eval list))
          (nval (typespec-eval--const-integer-value n)))
@@ -1612,9 +1588,9 @@ KEY, ALIST, and TEST are evaluated."
     (`(substring ,string ,start . ,rest)
      (typespec-eval--eval-substring string start (car rest)))
     (`(car ,arg)
-     (typespec-eval--eval-car arg))
+     (typespec-eval--eval-nth 0 arg))
     (`(cdr ,arg)
-     (typespec-eval--eval-cdr arg))
+     (typespec-eval--eval-nthcdr 1 arg))
     (`(car-safe ,arg)
      (typespec-eval--eval-car-safe arg))
     (`(cdr-safe ,arg)
