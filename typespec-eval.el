@@ -26,7 +26,9 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'seq)
+(require 'subr-x)
 
 (defun typespec-eval--const-p (form)
   "Return non-nil if FORM is a `(const VALUE)` expression."
@@ -355,6 +357,411 @@ all map successfully, return a simplified `(or ...)` of results."
       'string)
      (t 'unknown))))
 
+(defun typespec-eval--eval-string-match-p (regexp string &optional start)
+  "Evaluate a `string-match-p` expression."
+  (let ((regexp (typespec-eval--eval regexp))
+        (string (typespec-eval--eval string))
+        (start (when start (typespec-eval--eval start))))
+    (cond
+     ((and (typespec-eval--const-p regexp)
+           (typespec-eval--const-p string)
+           (stringp (typespec-eval--const-value regexp))
+           (stringp (typespec-eval--const-value string))
+           (or (null start)
+               (typespec-eval--const-p start))
+           (or (null start)
+               (integerp (typespec-eval--const-value start))))
+      (typespec-eval--make-const
+       (string-match-p (typespec-eval--const-value regexp)
+                       (typespec-eval--const-value string)
+                       (when start (typespec-eval--const-value start)))))
+     ((and (typespec-eval--string-type-p regexp)
+           (typespec-eval--string-type-p string)
+           (or (null start)
+               (typespec-eval--integer-type-p start)))
+      'boolean)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-as-multibyte (string)
+  "Evaluate a `string-as-multibyte` expression."
+  (let ((string (typespec-eval--eval string)))
+    (cond
+     ((typespec-eval--const-p string)
+      (let ((val (typespec-eval--const-value string)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-as-multibyte val))
+          'unknown)))
+     ((typespec-eval--non-empty-string-p string)
+      (typespec-eval--non-empty-string-expr))
+     ((typespec-eval--string-type-p string) 'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-as-unibyte (string)
+  "Evaluate a `string-as-unibyte` expression."
+  (let ((string (typespec-eval--eval string)))
+    (cond
+     ((typespec-eval--const-p string)
+      (let ((val (typespec-eval--const-value string)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-as-unibyte val))
+          'unknown)))
+     ((typespec-eval--non-empty-string-p string)
+      (typespec-eval--non-empty-string-expr))
+     ((typespec-eval--string-type-p string) 'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-to-multibyte (string)
+  "Evaluate a `string-to-multibyte` expression."
+  (let ((string (typespec-eval--eval string)))
+    (cond
+     ((typespec-eval--const-p string)
+      (let ((val (typespec-eval--const-value string)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-to-multibyte val))
+          'unknown)))
+     ((typespec-eval--non-empty-string-p string)
+      (typespec-eval--non-empty-string-expr))
+     ((typespec-eval--string-type-p string) 'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-to-unibyte (string)
+  "Evaluate a `string-to-unibyte` expression."
+  (let ((string (typespec-eval--eval string)))
+    (cond
+     ((typespec-eval--const-p string)
+      (let ((val (typespec-eval--const-value string)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-to-unibyte val))
+          'unknown)))
+     ((typespec-eval--non-empty-string-p string)
+      (typespec-eval--non-empty-string-expr))
+     ((typespec-eval--string-type-p string) 'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-chop-newline (string)
+  "Evaluate a `string-chop-newline` expression."
+  (let ((string (typespec-eval--eval string)))
+    (cond
+     ((typespec-eval--const-p string)
+      (let ((val (typespec-eval--const-value string)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-chop-newline val))
+          'unknown)))
+     ((typespec-eval--string-type-p string) 'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-clean-whitespace (string)
+  "Evaluate a `string-clean-whitespace` expression."
+  (let ((string (typespec-eval--eval string)))
+    (cond
+     ((typespec-eval--const-p string)
+      (let ((val (typespec-eval--const-value string)))
+        (if (stringp val)
+            (typespec-eval--make-const (string-clean-whitespace val))
+          'unknown)))
+     ((typespec-eval--string-type-p string) 'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-limit (string n)
+  "Evaluate a `string-limit` expression."
+  (let* ((string (typespec-eval--eval string))
+         (n (typespec-eval--eval n))
+         (sval (and (typespec-eval--const-p string)
+                    (typespec-eval--const-value string)))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (stringp sval) (integerp nval) (<= 0 nval))
+      (typespec-eval--make-const (string-limit sval nval)))
+     ((and (typespec-eval--string-type-p string)
+           (typespec-eval--integer-type-p n))
+      'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-distance (lhs rhs)
+  "Evaluate a `string-distance` expression."
+  (let ((lhs (typespec-eval--eval lhs))
+        (rhs (typespec-eval--eval rhs)))
+    (cond
+     ((and (typespec-eval--const-p lhs)
+           (typespec-eval--const-p rhs)
+           (stringp (typespec-eval--const-value lhs))
+           (stringp (typespec-eval--const-value rhs)))
+      (typespec-eval--make-const
+       (string-distance (typespec-eval--const-value lhs)
+                        (typespec-eval--const-value rhs))))
+     ((and (typespec-eval--string-type-p lhs)
+           (typespec-eval--string-type-p rhs))
+      'integer)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-char-to-string (char)
+  "Evaluate a `char-to-string` expression."
+  (let ((char (typespec-eval--eval char)))
+    (cond
+     ((typespec-eval--const-p char)
+      (let ((val (typespec-eval--const-value char)))
+        (if (characterp val)
+            (typespec-eval--make-const (char-to-string val))
+          'unknown)))
+     ((typespec-eval--integer-type-p char)
+      (typespec-eval--non-empty-string-expr))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-make-string (length char)
+  "Evaluate a `make-string` expression."
+  (let* ((length (typespec-eval--eval length))
+         (char (typespec-eval--eval char))
+         (len (typespec-eval--const-integer-value length))
+         (cval (and (typespec-eval--const-p char)
+                    (typespec-eval--const-value char))))
+    (cond
+     ((and (integerp len) (characterp cval) (<= 0 len))
+      (typespec-eval--make-const (make-string len cval)))
+     ((and (typespec-eval--integer-type-p length)
+           (typespec-eval--integer-type-p char))
+      (if (typespec-eval--positive-int-type-p length)
+          (typespec-eval--non-empty-string-expr)
+        'string))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-version-lessp (lhs rhs)
+  "Evaluate a `string-version-lessp` expression."
+  (let ((lhs (typespec-eval--eval lhs))
+        (rhs (typespec-eval--eval rhs)))
+    (cond
+     ((and (typespec-eval--const-p lhs)
+           (typespec-eval--const-p rhs)
+           (stringp (typespec-eval--const-value lhs))
+           (stringp (typespec-eval--const-value rhs)))
+      (typespec-eval--make-const
+       (string-version-lessp (typespec-eval--const-value lhs)
+                             (typespec-eval--const-value rhs))))
+     ((and (typespec-eval--string-type-p lhs)
+           (typespec-eval--string-type-p rhs))
+      'boolean)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-search (needle haystack &optional start)
+  "Evaluate a `string-search` expression."
+  (let ((needle (typespec-eval--eval needle))
+        (haystack (typespec-eval--eval haystack))
+        (start (when start (typespec-eval--eval start))))
+    (cond
+     ((and (typespec-eval--const-p needle)
+           (typespec-eval--const-p haystack)
+           (stringp (typespec-eval--const-value needle))
+           (stringp (typespec-eval--const-value haystack))
+           (or (null start)
+               (typespec-eval--const-p start))
+           (or (null start)
+               (integerp (typespec-eval--const-value start))))
+      (typespec-eval--make-const
+       (string-search (typespec-eval--const-value needle)
+                      (typespec-eval--const-value haystack)
+                      (when start (typespec-eval--const-value start)))))
+     ((and (typespec-eval--string-type-p needle)
+           (typespec-eval--string-type-p haystack)
+           (or (null start)
+               (typespec-eval--integer-type-p start)))
+      '(or (const nil) integer))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-split (string &optional separators omit-nulls trim)
+  "Evaluate a `string-split` expression."
+  (let* ((string (typespec-eval--eval string))
+         (separators (when separators (typespec-eval--eval separators)))
+         (omit-nulls (when omit-nulls (typespec-eval--eval omit-nulls)))
+         (trim (when trim (typespec-eval--eval trim)))
+         (sval (and (typespec-eval--const-p string)
+                    (typespec-eval--const-value string)))
+         (sep (and (typespec-eval--const-p separators)
+                   (typespec-eval--const-value separators)))
+         (omit (and (typespec-eval--const-p omit-nulls)
+                    (typespec-eval--const-value omit-nulls)))
+         (trim-val (and (typespec-eval--const-p trim)
+                        (typespec-eval--const-value trim)))
+         (sep-ok (or (null separators)
+                     (stringp sep)
+                     (eq sep nil)
+                     (eq sep t))))
+    (cond
+     ((and (stringp sval)
+           sep-ok
+           (or (null omit-nulls) (booleanp omit))
+           (or (null trim) (stringp trim-val) (eq trim-val nil) (eq trim-val t)))
+      (typespec-eval--make-const
+       (string-split sval sep omit trim-val)))
+     ((typespec-eval--string-type-p string)
+      '(list string))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-replace (from to string)
+  "Evaluate a `string-replace` expression."
+  (let ((from (typespec-eval--eval from))
+        (to (typespec-eval--eval to))
+        (string (typespec-eval--eval string)))
+    (cond
+     ((and (typespec-eval--const-p from)
+           (typespec-eval--const-p to)
+           (typespec-eval--const-p string)
+           (stringp (typespec-eval--const-value from))
+           (stringp (typespec-eval--const-value to))
+           (stringp (typespec-eval--const-value string)))
+      (typespec-eval--make-const
+       (string-replace (typespec-eval--const-value from)
+                       (typespec-eval--const-value to)
+                       (typespec-eval--const-value string))))
+     ((and (typespec-eval--string-type-p from)
+           (typespec-eval--string-type-p to)
+           (typespec-eval--string-type-p string))
+      'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-truncate-left (string n)
+  "Evaluate a `string-truncate-left` expression."
+  (let* ((string (typespec-eval--eval string))
+         (n (typespec-eval--eval n))
+         (sval (and (typespec-eval--const-p string)
+                    (typespec-eval--const-value string)))
+         (nval (typespec-eval--const-integer-value n)))
+    (cond
+     ((and (stringp sval) (integerp nval) (<= 0 nval))
+      (typespec-eval--make-const (string-truncate-left sval nval)))
+     ((and (typespec-eval--string-type-p string)
+           (typespec-eval--integer-type-p n))
+      'string)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-suffix-p (suffix string &optional ignore-case)
+  "Evaluate a `string-suffix-p` expression."
+  (let ((suffix (typespec-eval--eval suffix))
+        (string (typespec-eval--eval string))
+        (ignore-case (when ignore-case (typespec-eval--eval ignore-case))))
+    (cond
+     ((and (consp suffix) (eq (car suffix) 'or))
+      (typespec-eval--map-const-or
+       suffix
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-suffix-p item string ignore-case)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (consp string) (eq (car string) 'or))
+      (typespec-eval--map-const-or
+       string
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-suffix-p suffix item ignore-case)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (typespec-eval--const-p suffix)
+           (typespec-eval--const-p string)
+           (stringp (typespec-eval--const-value suffix))
+           (stringp (typespec-eval--const-value string))
+           (or (null ignore-case)
+               (and (typespec-eval--const-p ignore-case)
+                    (memq (typespec-eval--const-value ignore-case) '(t nil)))))
+      (typespec-eval--make-const
+       (string-suffix-p (typespec-eval--const-value suffix)
+                        (typespec-eval--const-value string)
+                        (when ignore-case
+                          (typespec-eval--const-value ignore-case)))))
+     ((and (typespec-eval--string-type-p suffix)
+           (typespec-eval--string-type-p string))
+      'boolean)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-lessp (lhs rhs)
+  "Evaluate a `string-lessp` expression."
+  (let ((lhs (typespec-eval--eval lhs))
+        (rhs (typespec-eval--eval rhs)))
+    (cond
+     ((and (consp lhs) (eq (car lhs) 'or))
+      (typespec-eval--map-const-or
+       lhs
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-lessp item rhs)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (consp rhs) (eq (car rhs) 'or))
+      (typespec-eval--map-const-or
+       rhs
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-lessp lhs item)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (typespec-eval--const-p lhs)
+           (typespec-eval--const-p rhs)
+           (stringp (typespec-eval--const-value lhs))
+           (stringp (typespec-eval--const-value rhs)))
+      (typespec-eval--make-const
+       (string-lessp (typespec-eval--const-value lhs)
+                     (typespec-eval--const-value rhs))))
+     ((and (typespec-eval--string-type-p lhs)
+           (typespec-eval--string-type-p rhs))
+      'boolean)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-greaterp (lhs rhs)
+  "Evaluate a `string-greaterp` expression."
+  (let ((lhs (typespec-eval--eval lhs))
+        (rhs (typespec-eval--eval rhs)))
+    (cond
+     ((and (consp lhs) (eq (car lhs) 'or))
+      (typespec-eval--map-const-or
+       lhs
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-greaterp item rhs)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (consp rhs) (eq (car rhs) 'or))
+      (typespec-eval--map-const-or
+       rhs
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-greaterp lhs item)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (typespec-eval--const-p lhs)
+           (typespec-eval--const-p rhs)
+           (stringp (typespec-eval--const-value lhs))
+           (stringp (typespec-eval--const-value rhs)))
+      (typespec-eval--make-const
+       (string-greaterp (typespec-eval--const-value lhs)
+                        (typespec-eval--const-value rhs))))
+     ((and (typespec-eval--string-type-p lhs)
+           (typespec-eval--string-type-p rhs))
+      'boolean)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-string-equal-ignore-case (lhs rhs)
+  "Evaluate a `string-equal-ignore-case` expression."
+  (let ((lhs (typespec-eval--eval lhs))
+        (rhs (typespec-eval--eval rhs)))
+    (cond
+     ((and (consp lhs) (eq (car lhs) 'or))
+      (typespec-eval--map-const-or
+       lhs
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-equal-ignore-case item rhs)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (consp rhs) (eq (car rhs) 'or))
+      (typespec-eval--map-const-or
+       rhs
+       (lambda (item)
+         (let ((res (typespec-eval--eval-string-equal-ignore-case lhs item)))
+           (when (typespec-eval--const-p res) res)))
+       'boolean))
+     ((and (typespec-eval--const-p lhs)
+           (typespec-eval--const-p rhs)
+           (stringp (typespec-eval--const-value lhs))
+           (stringp (typespec-eval--const-value rhs)))
+      (typespec-eval--make-const
+       (string-equal-ignore-case (typespec-eval--const-value lhs)
+                                 (typespec-eval--const-value rhs))))
+     ((and (typespec-eval--string-type-p lhs)
+           (typespec-eval--string-type-p rhs))
+      'boolean)
+     (t 'unknown))))
+
 (defun typespec-eval--eval-abs (arg)
   "Evaluate an `abs` expression over ARG."
   (let ((arg (typespec-eval--eval arg)))
@@ -381,6 +788,223 @@ all map successfully, return a simplified `(or ...)` of results."
 (typespec-eval--constant-defun truncate (numberp)
   :type-p typespec-eval--number-type-p
   :type-out integer)
+
+(defun typespec-eval--arith-type (args)
+  "Return the numeric result type for ARGS."
+  (cond
+   ((seq-every-p #'typespec-eval--integer-type-p args) 'integer)
+   ((seq-some #'typespec-eval--float-type-p args) 'float)
+   ((seq-every-p #'typespec-eval--number-type-p args) 'number)
+   (t 'unknown)))
+
+(defun typespec-eval--eval-arith (args op &optional zero-value)
+  "Evaluate arithmetic OP over ARGS.
+If all ARGS are numeric consts, return a const result.
+ZERO-VALUE is used when ARGS is empty."
+  (let ((args (mapcar #'typespec-eval--eval args)))
+    (cond
+     ((null args)
+      (if (null zero-value) 'unknown (typespec-eval--make-const zero-value)))
+     ((seq-every-p #'typespec-eval--const-p args)
+      (let ((values (mapcar #'typespec-eval--const-value args)))
+        (if (seq-every-p #'numberp values)
+            (typespec-eval--make-const (apply op values))
+          'unknown)))
+     (t (typespec-eval--arith-type args)))))
+
+(defun typespec-eval--eval-plus (args)
+  "Evaluate a `+` expression over ARGS."
+  (typespec-eval--eval-arith args #'+ 0))
+
+(defun typespec-eval--eval-times (args)
+  "Evaluate a `*` expression over ARGS."
+  (typespec-eval--eval-arith args #'* 1))
+
+(defun typespec-eval--eval-minus (args)
+  "Evaluate a `-` expression over ARGS."
+  (typespec-eval--eval-arith args #'- 0))
+
+(defun typespec-eval--eval-divide (args)
+  "Evaluate a `/` expression over ARGS."
+  (typespec-eval--eval-arith args #'/))
+
+(defun typespec-eval--eval-rem (args)
+  "Evaluate a `%` expression over ARGS."
+  (let ((args (mapcar #'typespec-eval--eval args)))
+    (cond
+     ((null args) 'unknown)
+     ((seq-every-p #'typespec-eval--const-p args)
+      (let ((values (mapcar #'typespec-eval--const-value args)))
+        (if (seq-every-p #'integerp values)
+            (typespec-eval--make-const (apply #'% values))
+          'unknown)))
+     ((seq-every-p #'typespec-eval--integer-type-p args) 'integer)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-mod (args)
+  "Evaluate a `mod` expression over ARGS."
+  (let ((args (mapcar #'typespec-eval--eval args)))
+    (cond
+     ((null args) 'unknown)
+     ((seq-every-p #'typespec-eval--const-p args)
+      (let ((values (mapcar #'typespec-eval--const-value args)))
+        (if (seq-every-p #'numberp values)
+            (typespec-eval--make-const (apply #'mod values))
+          'unknown)))
+     ((seq-some #'typespec-eval--float-type-p args) 'float)
+     ((seq-every-p #'typespec-eval--integer-type-p args) 'integer)
+     ((seq-every-p #'typespec-eval--number-type-p args) 'number)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-integer-variadic (args op &optional zero-value)
+  "Evaluate integer OP over ARGS, returning `integer` or a const.
+ZERO-VALUE is used when ARGS is empty."
+  (let ((args (mapcar #'typespec-eval--eval args)))
+    (cond
+     ((null args)
+      (if (null zero-value) 'unknown (typespec-eval--make-const zero-value)))
+     ((seq-every-p #'typespec-eval--const-p args)
+      (let ((values (mapcar #'typespec-eval--const-value args)))
+        (if (seq-every-p #'integerp values)
+            (typespec-eval--make-const (apply op values))
+          'unknown)))
+     ((seq-every-p #'typespec-eval--integer-type-p args) 'integer)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-logand (args)
+  "Evaluate a `logand` expression over ARGS."
+  (typespec-eval--eval-integer-variadic args #'logand -1))
+
+(defun typespec-eval--eval-logior (args)
+  "Evaluate a `logior` expression over ARGS."
+  (typespec-eval--eval-integer-variadic args #'logior 0))
+
+(defun typespec-eval--eval-logxor (args)
+  "Evaluate a `logxor` expression over ARGS."
+  (typespec-eval--eval-integer-variadic args #'logxor 0))
+
+(defun typespec-eval--eval-ash (value count)
+  "Evaluate an `ash` expression."
+  (let ((value (typespec-eval--eval value))
+        (count (typespec-eval--eval count)))
+    (cond
+     ((and (typespec-eval--const-p value)
+           (typespec-eval--const-p count)
+           (integerp (typespec-eval--const-value value))
+           (integerp (typespec-eval--const-value count)))
+     (typespec-eval--make-const
+       (ash (typespec-eval--const-value value)
+            (typespec-eval--const-value count))))
+     ((and (typespec-eval--integer-type-p value)
+           (typespec-eval--integer-type-p count))
+      'integer)
+     (t 'unknown))))
+
+(typespec-eval--constant-defun lognot (integerp)
+  :type-p typespec-eval--integer-type-p
+  :type-out integer)
+(typespec-eval--constant-defun logcount (integerp)
+  :type-p typespec-eval--integer-type-p
+  :type-out integer)
+(typespec-eval--constant-defun zerop (numberp)
+  :type-p typespec-eval--number-type-p
+  :type-out boolean)
+(typespec-eval--constant-defun log10 (numberp)
+  :type-p typespec-eval--number-type-p
+  :type-out float)
+
+(defun typespec-eval--eval-lsh (value count)
+  "Evaluate an `lsh` expression."
+  (let ((value (typespec-eval--eval value))
+        (count (typespec-eval--eval count)))
+    (cond
+     ((and (typespec-eval--const-p value)
+           (typespec-eval--const-p count)
+           (integerp (typespec-eval--const-value value))
+           (integerp (typespec-eval--const-value count)))
+      (typespec-eval--make-const
+       (lsh (typespec-eval--const-value value)
+            (typespec-eval--const-value count))))
+     ((and (typespec-eval--integer-type-p value)
+           (typespec-eval--integer-type-p count))
+      'integer)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-number-sequence (from &optional to inc)
+  "Evaluate a `number-sequence` expression."
+  (let* ((from (typespec-eval--eval from))
+         (to (when to (typespec-eval--eval to)))
+         (inc (when inc (typespec-eval--eval inc)))
+         (from-val (and (typespec-eval--const-p from)
+                        (typespec-eval--const-value from)))
+         (to-val (and (typespec-eval--const-p to)
+                      (typespec-eval--const-value to)))
+         (inc-val (and (typespec-eval--const-p inc)
+                       (typespec-eval--const-value inc))))
+    (cond
+     ((and (numberp from-val)
+           (or (null to) (numberp to-val))
+           (or (null inc) (numberp inc-val)))
+      (typespec-eval--make-const (number-sequence from-val to-val inc-val)))
+     ((and (typespec-eval--number-type-p from)
+           (or (null to) (typespec-eval--number-type-p to))
+           (or (null inc) (typespec-eval--number-type-p inc)))
+      '(list number))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-isnan (arg)
+  "Evaluate an `isnan` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (numberp val)
+            (typespec-eval--make-const (isnan val))
+          'unknown)))
+     ((typespec-eval--number-type-p arg) 'boolean)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-cl-signum (arg)
+  "Evaluate a `cl-signum` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (numberp val)
+            (typespec-eval--make-const (cl-signum val))
+          'unknown)))
+     ((typespec-eval--float-type-p arg) 'float)
+     ((typespec-eval--integer-type-p arg) 'integer)
+     ((typespec-eval--number-type-p arg) 'number)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-add1 (arg)
+  "Evaluate a `1+` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (numberp val)
+            (typespec-eval--make-const (1+ val))
+          'unknown)))
+     ((typespec-eval--float-type-p arg) 'float)
+     ((typespec-eval--integer-type-p arg) 'integer)
+     ((typespec-eval--number-type-p arg) 'number)
+     (t 'unknown))))
+
+(defun typespec-eval--eval-sub1 (arg)
+  "Evaluate a `1-` expression over ARG."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (numberp val)
+            (typespec-eval--make-const (1- val))
+          'unknown)))
+     ((typespec-eval--float-type-p arg) 'float)
+     ((typespec-eval--integer-type-p arg) 'integer)
+     ((typespec-eval--number-type-p arg) 'number)
+     (t 'unknown))))
 
 (defun typespec-eval--eval-minmax (args op)
   "Evaluate a MIN/MAX expression over ARGS using OP."
@@ -827,6 +1451,95 @@ all map successfully, return a simplified `(or ...)` of results."
       prefix
       string
       (car rest)))
+    (`(string-suffix-p ,suffix ,string . ,rest)
+     (typespec-eval--eval-string-suffix-p
+      suffix
+      string
+      (car rest)))
+    (`(string< ,lhs ,rhs)
+     (typespec-eval--eval-string-lessp lhs rhs))
+    (`(string> ,lhs ,rhs)
+     (typespec-eval--eval-string-greaterp lhs rhs))
+    (`(string= ,lhs ,rhs)
+     (typespec-eval--eval-string-equal lhs rhs))
+    (`(string-lessp ,lhs ,rhs)
+     (typespec-eval--eval-string-lessp lhs rhs))
+    (`(string-greaterp ,lhs ,rhs)
+     (typespec-eval--eval-string-greaterp lhs rhs))
+    (`(string-equal-ignore-case ,lhs ,rhs)
+     (typespec-eval--eval-string-equal-ignore-case lhs rhs))
+    (`(string-search ,needle ,haystack . ,rest)
+     (typespec-eval--eval-string-search needle haystack (car rest)))
+    (`(string-split ,string . ,rest)
+     (typespec-eval--eval-string-split string (car rest) (cadr rest) (caddr rest)))
+    (`(string-replace ,from ,to ,string)
+     (typespec-eval--eval-string-replace from to string))
+    (`(string-truncate-left ,string ,n)
+     (typespec-eval--eval-string-truncate-left string n))
+    (`(string-match-p ,regexp ,string . ,rest)
+     (typespec-eval--eval-string-match-p regexp string (car rest)))
+    (`(string-as-multibyte ,string)
+     (typespec-eval--eval-string-as-multibyte string))
+    (`(string-as-unibyte ,string)
+     (typespec-eval--eval-string-as-unibyte string))
+    (`(string-to-multibyte ,string)
+     (typespec-eval--eval-string-to-multibyte string))
+    (`(string-to-unibyte ,string)
+     (typespec-eval--eval-string-to-unibyte string))
+    (`(string-chop-newline ,string)
+     (typespec-eval--eval-string-chop-newline string))
+    (`(string-clean-whitespace ,string)
+     (typespec-eval--eval-string-clean-whitespace string))
+    (`(string-limit ,string ,n)
+     (typespec-eval--eval-string-limit string n))
+    (`(string-distance ,lhs ,rhs)
+     (typespec-eval--eval-string-distance lhs rhs))
+    (`(string-version-lessp ,lhs ,rhs)
+     (typespec-eval--eval-string-version-lessp lhs rhs))
+    (`(char-to-string ,char)
+     (typespec-eval--eval-char-to-string char))
+    (`(make-string ,length ,char)
+     (typespec-eval--eval-make-string length char))
+    (`(+ . ,args)
+     (typespec-eval--eval-plus args))
+    (`(* . ,args)
+     (typespec-eval--eval-times args))
+    (`(- . ,args)
+     (typespec-eval--eval-minus args))
+    (`(/ . ,args)
+     (typespec-eval--eval-divide args))
+    (`(% . ,args)
+     (typespec-eval--eval-rem args))
+    (`(mod . ,args)
+     (typespec-eval--eval-mod args))
+    (`(logand . ,args)
+     (typespec-eval--eval-logand args))
+    (`(logior . ,args)
+     (typespec-eval--eval-logior args))
+    (`(logxor . ,args)
+     (typespec-eval--eval-logxor args))
+    (`(lognot ,arg)
+     (typespec-eval--eval-lognot arg))
+    (`(logcount ,arg)
+     (typespec-eval--eval-logcount arg))
+    (`(ash ,value ,count)
+     (typespec-eval--eval-ash value count))
+    (`(lsh ,value ,count)
+     (typespec-eval--eval-lsh value count))
+    (`(zerop ,arg)
+     (typespec-eval--eval-zerop arg))
+    (`(log10 ,arg)
+     (typespec-eval--eval-log10 arg))
+    (`(isnan ,arg)
+     (typespec-eval--eval-isnan arg))
+    (`(cl-signum ,arg)
+     (typespec-eval--eval-cl-signum arg))
+    (`(number-sequence ,from . ,rest)
+     (typespec-eval--eval-number-sequence from (car rest) (cadr rest)))
+    (`(1+ ,arg)
+     (typespec-eval--eval-add1 arg))
+    (`(1- ,arg)
+     (typespec-eval--eval-sub1 arg))
     (`(max . ,args)
      (typespec-eval--eval-max args))
     (`(min . ,args)
