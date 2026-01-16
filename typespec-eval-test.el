@@ -33,6 +33,31 @@
   (should (equal (typespec-eval '(eq number number)) 'boolean))
   (should (equal (typespec-eval '(eq unknown unknown)) 'boolean)))
 
+(ert-deftest typespec-eval-eql ()
+  (should (equal (typespec-eval '(eql (const 1) (const 1)))
+                 '(const t)))
+  (should (equal (typespec-eval '(eql (const 1.0) (const 1.0)))
+                 '(const t)))
+  (should (equal (typespec-eval '(eql (const 1) (const 1.0)))
+                 '(const nil)))
+  (should (equal (typespec-eval '(eql (const "a") (const "a")))
+                 '(const nil)))   ; strings are not eql unless eq
+  (should (equal (typespec-eval '(eql number number)) 'boolean))
+  (should (equal (typespec-eval '(eql unknown unknown)) 'boolean)))
+
+(ert-deftest typespec-eval-numeric-equal ()
+  (should (equal (typespec-eval '(= (const 1) (const 1)))
+                 '(const t)))
+  (should (equal (typespec-eval '(= (const 1) (const 1.0)))
+                 '(const t)))   ; numeric equality
+  (should (equal (typespec-eval '(= (const 1) (const 2)))
+                 '(const nil)))
+  (should (equal (typespec-eval '(= integer integer)) 'boolean))
+  (should (equal (typespec-eval '(= float float)) 'boolean))
+  (should (equal (typespec-eval '(= number number)) 'boolean))
+  (should (equal (typespec-eval '(= string string)) 'unknown))  ; non-numeric
+  (should (equal (typespec-eval '(= unknown unknown)) 'unknown)))
+
 (ert-deftest typespec-eval-upcase ()
   (should (equal (typespec-eval '(upcase "a"))
                  '(const "A")))

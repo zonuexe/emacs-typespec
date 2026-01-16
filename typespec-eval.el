@@ -165,53 +165,33 @@
       'string)
      (t (cons 'and items)))))
 
-(eval-and-compile
-  (defun typespec-eval--constant-defun--predicate (pred value)
-    "Return a predicate form for PRED and VALUE."
-    (if (and (consp pred) (eq (car pred) 'or))
-        `(or ,@(mapcar (lambda (p) `(,p ,value)) (cdr pred)))
-      `(,pred ,value))))
+(defun typespec-eval--eval-const-fold (arg fn pred &optional type-in type-out type-p fallback)
+  "Evaluate FN over ARG with constant folding.
+PRED is a predicate function to check if the value can be processed.
+TYPE-IN is the input type to match (returns TYPE-OUT when matched).
+TYPE-OUT is the output type (defaults to TYPE-IN).
+TYPE-P is an optional predicate to check the evaluated type.
+FALLBACK is the type to return when no rule matches (default: `unknown`)."
+  (let* ((arg (typespec-eval--eval arg))
+         (type-out (or type-out type-in))
+         (fallback (or fallback 'unknown))
+         (mapped
+          (typespec-eval--map-const-or
+           arg
+           (lambda (item)
+             (when (typespec-eval--const-p item)
+               (let ((val (typespec-eval--const-value item)))
+                 (when (funcall pred val)
+                   (typespec-eval--make-const (funcall fn val)))))))))
+    (cond
+     (mapped mapped)
+     ((and type-in (eq arg type-in)) type-out)
+     ((and type-p (funcall type-p arg)) type-out)
+     (t fallback))))
 
-(defmacro typespec-eval--constant-defun (name predicates &rest keys)
-  "Define a const-folding evaluator for NAME using PREDICATES.
-
-PREDICATES is a list containing a predicate form, such as `(or stringp
-characterp)`.  Optional KEYS:
-
-- :type TYPE — return TYPE when the evaluated argument is TYPE.
-- :type-in TYPE — return :type-out when the evaluated argument is TYPE.
-- :type-out TYPE — output type for :type-in (defaults to :type-in).
-- :type-p PRED — return :type-out when (PRED ARG) is non-nil.
-- :fallback TYPE — return TYPE when no rule matches (default: `unknown`)."
-  (declare (indent 1))
-  (let* ((pred (car predicates))
-         (arg-sym (make-symbol "arg"))
-         (item-sym (make-symbol "item"))
-         (value-sym (make-symbol "value"))
-         (type (plist-get keys :type))
-         (type-in (or (plist-get keys :type-in) type))
-         (type-p (plist-get keys :type-p))
-         (type-out (or (plist-get keys :type-out) type-in))
-         (fallback (or (plist-get keys :fallback) 'unknown))
-         (pred-form (typespec-eval--constant-defun--predicate pred value-sym))
-         (eval-fn (intern (format "typespec-eval--eval-%s" name))))
-    `(defun ,eval-fn (,arg-sym)
-       ,(format "Evaluate a `%s` expression over ARG." name)
-       (let* ((,arg-sym (typespec-eval--eval ,arg-sym))
-              (mapped
-               (typespec-eval--map-const-or
-                ,arg-sym
-                (lambda (,item-sym)
-                  (when (typespec-eval--const-p ,item-sym)
-                    (let ((,value-sym (typespec-eval--const-value ,item-sym)))
-                      (when ,pred-form
-                        (typespec-eval--make-const
-                         (,name ,value-sym)))))))))
-         (cond
-         (mapped mapped)
-          ,@(when type-in `(((eq ,arg-sym ',type-in) ',type-out)))
-          ,@(when type-p `(((funcall #',type-p ,arg-sym) ',type-out)))
-          (t ',fallback))))))
+(defsubst typespec-eval--string-or-char-p (val)
+  "Return non-nil if VAL is a string or character."
+  (or (stringp val) (characterp val)))
 
 (defun typespec-eval--map-const-or (arg fn &optional fallback)
   "Apply FN to const values inside ARG; otherwise return FALLBACK.
@@ -324,61 +304,44 @@ input."
       'string)
      (t 'unknown))))
 
-(defun typespec-eval--eval-eq (lhs rhs)
-  "Evaluate an `eq` expression over LHS and RHS."
+(defun typespec-eval--eval-equality (lhs rhs fn &optional value-pred type-pred)
+  "Evaluate an equality expression over LHS and RHS using FN.
+VALUE-PRED is an optional predicate to check const values (e.g., #\\='numberp for =).
+TYPE-PRED is an optional predicate to check evaluated types."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
-     ((and (typespec-eval--always-nil-p lhs)
+     ;; nil checks (only for generic equality, not type-restricted)
+     ((and (null value-pred)
+           (typespec-eval--always-nil-p lhs)
            (typespec-eval--always-nil-p rhs))
       (typespec-eval--make-const t))
-     ((and (typespec-eval--always-non-nil-p lhs)
+     ((and (null value-pred)
+           (typespec-eval--always-non-nil-p lhs)
            (typespec-eval--always-nil-p rhs))
       (typespec-eval--make-const nil))
-     ((and (typespec-eval--always-nil-p lhs)
+     ((and (null value-pred)
+           (typespec-eval--always-nil-p lhs)
            (typespec-eval--always-non-nil-p rhs))
       (typespec-eval--make-const nil))
+     ;; const comparison
      ((and (typespec-eval--const-p lhs)
-           (typespec-eval--const-p rhs))
+           (typespec-eval--const-p rhs)
+           (or (null value-pred)
+               (and (funcall value-pred (typespec-eval--const-value lhs))
+                    (funcall value-pred (typespec-eval--const-value rhs)))))
       (typespec-eval--make-const
-       (eq (typespec-eval--const-value lhs)
-           (typespec-eval--const-value rhs))))
-     (t 'boolean))))
+       (funcall fn (typespec-eval--const-value lhs)
+                (typespec-eval--const-value rhs))))
+     ;; type check for specialized comparisons
+     ((and type-pred
+           (funcall type-pred lhs)
+           (funcall type-pred rhs))
+      'boolean)
+     ;; default for generic equality
+     ((null value-pred) 'boolean)
+     (t 'unknown))))
 
-(defun typespec-eval--eval-equal (lhs rhs)
-  "Evaluate an `equal` expression over LHS and RHS."
-  (let ((lhs (typespec-eval--eval lhs))
-        (rhs (typespec-eval--eval rhs)))
-    (cond
-     ((and (typespec-eval--always-nil-p lhs)
-           (typespec-eval--always-nil-p rhs))
-      (typespec-eval--make-const t))
-     ((and (typespec-eval--always-non-nil-p lhs)
-           (typespec-eval--always-nil-p rhs))
-      (typespec-eval--make-const nil))
-     ((and (typespec-eval--always-nil-p lhs)
-           (typespec-eval--always-non-nil-p rhs))
-      (typespec-eval--make-const nil))
-     ((and (typespec-eval--const-p lhs)
-           (typespec-eval--const-p rhs))
-      (typespec-eval--make-const
-       (equal (typespec-eval--const-value lhs)
-              (typespec-eval--const-value rhs))))
-     (t 'boolean))))
-
-(typespec-eval--constant-defun upcase ((or stringp characterp)) :type string)
-(typespec-eval--constant-defun downcase ((or stringp characterp)) :type string)
-
-(typespec-eval--constant-defun string-to-number (stringp)
-  :type-in string
-  :type-out number)
-(typespec-eval--constant-defun capitalize ((or stringp characterp)) :type string)
-(typespec-eval--constant-defun number-to-string (numberp)
-  :type-in number
-  :type-out string)
-(typespec-eval--constant-defun string-trim (stringp) :type string)
-(typespec-eval--constant-defun string-trim-left (stringp) :type string)
-(typespec-eval--constant-defun string-trim-right (stringp) :type string)
 
 (defsubst typespec-eval--list-of-p (form type)
   "Return non-nil if FORM is a list type of TYPE."
@@ -673,18 +636,6 @@ STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
       'boolean)
      (t 'unknown))))
 
-(typespec-eval--constant-defun floor (numberp)
-  :type-p typespec-eval--number-type-p
-  :type-out integer)
-(typespec-eval--constant-defun ceiling (numberp)
-  :type-p typespec-eval--number-type-p
-  :type-out integer)
-(typespec-eval--constant-defun round (numberp)
-  :type-p typespec-eval--number-type-p
-  :type-out integer)
-(typespec-eval--constant-defun truncate (numberp)
-  :type-p typespec-eval--number-type-p
-  :type-out integer)
 
 (defun typespec-eval--arith-type (args)
   "Return the numeric result type for ARGS."
@@ -770,15 +721,6 @@ ZERO-VALUE is used when ARGS is empty."
       'integer)
      (t 'unknown))))
 
-(typespec-eval--constant-defun lognot (integerp)
-  :type-p typespec-eval--integer-type-p
-  :type-out integer)
-(typespec-eval--constant-defun logcount (integerp)
-  :type-p typespec-eval--integer-type-p
-  :type-out integer)
-(typespec-eval--constant-defun zerop (numberp)
-  :type-p typespec-eval--number-type-p
-  :type-out boolean)
 
 (defun typespec-eval--eval-number-sequence (from &optional to inc)
   "Evaluate a `number-sequence` expression for FROM, TO, and INC."
@@ -800,18 +742,6 @@ ZERO-VALUE is used when ARGS is empty."
            (or (null to) (typespec-eval--number-type-p to))
            (or (null inc) (typespec-eval--number-type-p inc)))
       '(list number))
-     (t 'unknown))))
-
-(defun typespec-eval--eval-isnan (arg)
-  "Evaluate an `isnan` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
-    (cond
-     ((typespec-eval--const-p arg)
-      (let ((val (typespec-eval--const-value arg)))
-        (if (numberp val)
-            (typespec-eval--make-const (isnan val))
-          'unknown)))
-     ((typespec-eval--number-type-p arg) 'boolean)
      (t 'unknown))))
 
 (defun typespec-eval--eval-car-safe (arg)
@@ -910,36 +840,21 @@ When N is 1, behaves like `cdr`."
       (cadr array))
      (t 'unknown))))
 
-(defun typespec-eval--eval-reverse (arg)
-  "Evaluate a `reverse` expression over ARG."
+(defun typespec-eval--eval-sequence-identity (arg fn)
+  "Evaluate a sequence-preserving operation FN over ARG.
+FN is applied to const values; the type structure is preserved for typed args."
   (let ((arg (typespec-eval--eval arg)))
     (cond
      ((typespec-eval--const-p arg)
       (let ((val (typespec-eval--const-value arg)))
         (if (or (listp val) (vectorp val) (stringp val))
-            (typespec-eval--make-const (reverse val))
+            (typespec-eval--make-const (funcall fn val))
           'unknown)))
      ((eq (car-safe arg) 'list+) (list 'list+ (cadr arg)))
      ((eq (car-safe arg) 'list) (list 'list (cadr arg)))
      ((typespec-eval--string-type-p arg) 'string)
      ((and (consp arg) (eq (car arg) 'vector))
       (list 'vector (cadr arg)))
-     (t 'unknown))))
-
-(defun typespec-eval--eval-copy-sequence (sequence)
-  "Evaluate a `copy-sequence` expression for SEQUENCE."
-  (let ((sequence (typespec-eval--eval sequence)))
-    (cond
-     ((typespec-eval--const-p sequence)
-      (let ((val (typespec-eval--const-value sequence)))
-        (if (or (listp val) (vectorp val) (stringp val))
-            (typespec-eval--make-const (copy-sequence val))
-          'unknown)))
-     ((eq (car-safe sequence) 'list+) (list 'list+ (cadr sequence)))
-     ((eq (car-safe sequence) 'list) (list 'list (cadr sequence)))
-     ((typespec-eval--string-type-p sequence) 'string)
-     ((and (consp sequence) (eq (car sequence) 'vector))
-      (list 'vector (cadr sequence)))
      (t 'unknown))))
 
 (defun typespec-eval--eval-safe-length (list)
@@ -1309,42 +1224,6 @@ KEY, ALIST, and TEST are evaluated."
         'string))
      (t 'unknown))))
 
-(defun typespec-eval--eval-string-to-char (arg)
-  "Evaluate a `string-to-char` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
-    (cond
-     ((typespec-eval--const-p arg)
-      (let ((val (typespec-eval--const-value arg)))
-        (if (stringp val)
-            (typespec-eval--make-const (string-to-char val))
-          'unknown)))
-     ((typespec-eval--string-type-p arg) 'integer)
-     (t 'unknown))))
-
-(defun typespec-eval--eval-string-to-list (arg)
-  "Evaluate a `string-to-list` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
-    (cond
-     ((typespec-eval--const-p arg)
-      (let ((val (typespec-eval--const-value arg)))
-        (if (stringp val)
-            (typespec-eval--make-const (string-to-list val))
-          'unknown)))
-     ((typespec-eval--string-type-p arg) '(list integer))
-     (t 'unknown))))
-
-(defun typespec-eval--eval-string-to-vector (arg)
-  "Evaluate a `string-to-vector` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
-    (cond
-     ((typespec-eval--const-p arg)
-      (let ((val (typespec-eval--const-value arg)))
-        (if (stringp val)
-            (typespec-eval--make-const (string-to-vector val))
-          'unknown)))
-     ((typespec-eval--string-type-p arg) '(vector integer))
-     (t 'unknown))))
-
 (defun typespec-eval--eval-string-equal (lhs rhs)
   "Evaluate a `string-equal` expression over LHS and RHS."
   (let ((lhs (typespec-eval--eval lhs))
@@ -1546,25 +1425,29 @@ KEY, ALIST, and TEST are evaluated."
     (`(integer ,low ,high)
      (typespec-eval--integer-range low high))
     (`(eq ,lhs ,rhs)
-     (typespec-eval--eval-eq lhs rhs))
+     (typespec-eval--eval-equality lhs rhs #'eq))
+    (`(eql ,lhs ,rhs)
+     (typespec-eval--eval-equality lhs rhs #'eql))
     (`(equal ,lhs ,rhs)
-     (typespec-eval--eval-equal lhs rhs))
+     (typespec-eval--eval-equality lhs rhs #'equal))
+    (`(= ,lhs ,rhs)
+     (typespec-eval--eval-equality lhs rhs #'= #'numberp #'typespec-eval--number-type-p))
     (`(upcase ,arg)
-     (typespec-eval--eval-upcase arg))
+     (typespec-eval--eval-const-fold arg #'upcase #'typespec-eval--string-or-char-p 'string))
     (`(downcase ,arg)
-     (typespec-eval--eval-downcase arg))
+     (typespec-eval--eval-const-fold arg #'downcase #'typespec-eval--string-or-char-p 'string))
     (`(capitalize ,arg)
-     (typespec-eval--eval-capitalize arg))
+     (typespec-eval--eval-const-fold arg #'capitalize #'typespec-eval--string-or-char-p 'string))
     (`(string-to-number ,arg)
-     (typespec-eval--eval-string-to-number arg))
+     (typespec-eval--eval-const-fold arg #'string-to-number #'stringp 'string 'number))
     (`(number-to-string ,arg)
-     (typespec-eval--eval-number-to-string arg))
+     (typespec-eval--eval-const-fold arg #'number-to-string #'numberp 'number 'string))
     (`(string-trim ,arg)
-     (typespec-eval--eval-string-trim arg))
+     (typespec-eval--eval-const-fold arg #'string-trim #'stringp 'string))
     (`(string-trim-left ,arg)
-     (typespec-eval--eval-string-trim-left arg))
+     (typespec-eval--eval-const-fold arg #'string-trim-left #'stringp 'string))
     (`(string-trim-right ,arg)
-     (typespec-eval--eval-string-trim-right arg))
+     (typespec-eval--eval-const-fold arg #'string-trim-right #'stringp 'string))
     (`(string-width ,arg)
      (typespec-eval--eval-string-width arg))
     (`(string-lines ,string . ,rest)
@@ -1574,13 +1457,13 @@ KEY, ALIST, and TEST are evaluated."
     (`(abs ,arg)
      (typespec-eval--eval-numeric-unary arg #'abs))
     (`(floor ,arg)
-     (typespec-eval--eval-floor arg))
+     (typespec-eval--eval-const-fold arg #'floor #'numberp nil 'integer #'typespec-eval--number-type-p))
     (`(ceiling ,arg)
-     (typespec-eval--eval-ceiling arg))
+     (typespec-eval--eval-const-fold arg #'ceiling #'numberp nil 'integer #'typespec-eval--number-type-p))
     (`(round ,arg)
-     (typespec-eval--eval-round arg))
+     (typespec-eval--eval-const-fold arg #'round #'numberp nil 'integer #'typespec-eval--number-type-p))
     (`(truncate ,arg)
-     (typespec-eval--eval-truncate arg))
+     (typespec-eval--eval-const-fold arg #'truncate #'numberp nil 'integer #'typespec-eval--number-type-p))
     (`(length ,arg)
      (typespec-eval--eval-length arg))
     (`(string-bytes ,arg)
@@ -1604,9 +1487,9 @@ KEY, ALIST, and TEST are evaluated."
     (`(aref ,array ,n)
      (typespec-eval--eval-aref array n))
     (`(reverse ,arg)
-     (typespec-eval--eval-reverse arg))
+     (typespec-eval--eval-sequence-identity arg #'reverse))
     (`(copy-sequence ,sequence)
-     (typespec-eval--eval-copy-sequence sequence))
+     (typespec-eval--eval-sequence-identity sequence #'copy-sequence))
     (`(safe-length ,list)
      (typespec-eval--eval-safe-length list))
     (`(last ,list . ,rest)
@@ -1644,11 +1527,11 @@ KEY, ALIST, and TEST are evaluated."
     (`(string-remove-suffix ,suffix ,string)
      (typespec-eval--eval-binary-string-op suffix string #'string-remove-suffix))
     (`(string-to-char ,arg)
-     (typespec-eval--eval-string-to-char arg))
+     (typespec-eval--eval-const-fold arg #'string-to-char #'stringp nil 'integer #'typespec-eval--string-type-p))
     (`(string-to-list ,arg)
-     (typespec-eval--eval-string-to-list arg))
+     (typespec-eval--eval-const-fold arg #'string-to-list #'stringp nil '(list integer) #'typespec-eval--string-type-p))
     (`(string-to-vector ,arg)
-     (typespec-eval--eval-string-to-vector arg))
+     (typespec-eval--eval-const-fold arg #'string-to-vector #'stringp nil '(vector integer) #'typespec-eval--string-type-p))
     (`(string-equal ,lhs ,rhs)
      (typespec-eval--eval-string-equal lhs rhs))
     (`(string-prefix-p ,prefix ,string . ,rest)
@@ -1720,15 +1603,15 @@ KEY, ALIST, and TEST are evaluated."
     (`(logxor . ,args)
      (typespec-eval--eval-integer-variadic args #'logxor 0))
     (`(lognot ,arg)
-     (typespec-eval--eval-lognot arg))
+     (typespec-eval--eval-const-fold arg #'lognot #'integerp nil 'integer #'typespec-eval--integer-type-p))
     (`(logcount ,arg)
-     (typespec-eval--eval-logcount arg))
+     (typespec-eval--eval-const-fold arg #'logcount #'integerp nil 'integer #'typespec-eval--integer-type-p))
     (`(ash ,value ,count)
      (typespec-eval--eval-ash value count))
     (`(zerop ,arg)
-     (typespec-eval--eval-zerop arg))
+     (typespec-eval--eval-const-fold arg #'zerop #'numberp nil 'boolean #'typespec-eval--number-type-p))
     (`(isnan ,arg)
-     (typespec-eval--eval-isnan arg))
+     (typespec-eval--eval-const-fold arg #'isnan #'numberp nil 'boolean #'typespec-eval--number-type-p))
     (`(cl-signum ,arg)
      (typespec-eval--eval-numeric-unary arg #'cl-signum))
     (`(number-sequence ,from . ,rest)
