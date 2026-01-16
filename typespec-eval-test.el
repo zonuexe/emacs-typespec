@@ -1117,5 +1117,46 @@
   (should (equal (typespec-eval '(char-or-string-p (list integer)))
                  'boolean)))
 
+(ert-deftest typespec-eval-unknown-types ()
+  "Test that unknown types without :guard registration return boolean."
+  ;; Unknown types (not registered via :guard) return boolean for built-in predicates
+  ;; because we cannot determine their base type without typespec registration
+  (should (equal (typespec-eval '(stringp my-book))
+                 'boolean))
+  (should (equal (typespec-eval '(integerp my-book))
+                 'boolean))
+  (should (equal (typespec-eval '(numberp my-book))
+                 'boolean))
+  (should (equal (typespec-eval '(listp my-book))
+                 'boolean))
+  (should (equal (typespec-eval '(vectorp my-book))
+                 'boolean))
+  ;; Unknown predicates return unknown (not registered in pcase)
+  (should (equal (typespec-eval '(my-book-p my-book))
+                 'unknown)))
+
+(ert-deftest typespec-eval-guard-types ()
+  "Test that :guard-defined types are correctly resolved via typespec."
+  ;; Setup: register jp-postal-code-p with :guard (rx ...) => string base type
+  (function-put 'jp-postal-code-p 'typespec
+                '(function (unknown) (:guard (rx string-start "〒" (= 3 digit) "-" (= 4 digit) string-end))))
+  (unwind-protect
+      (progn
+        ;; jp-postal-code is string-based, so stringp returns t
+        (should (equal (typespec-eval '(stringp jp-postal-code))
+                       '(const t)))
+        ;; jp-postal-code is NOT a number
+        (should (equal (typespec-eval '(integerp jp-postal-code))
+                       '(const nil)))
+        (should (equal (typespec-eval '(numberp jp-postal-code))
+                       '(const nil)))
+        ;; jp-postal-code is NOT a list or vector
+        (should (equal (typespec-eval '(listp jp-postal-code))
+                       '(const nil)))
+        (should (equal (typespec-eval '(vectorp jp-postal-code))
+                       '(const nil))))
+    ;; Cleanup
+    (function-put 'jp-postal-code-p 'typespec nil)))
+
 (provide 'typespec-eval-test)
 ;;; typespec-eval-test.el ends here

@@ -165,11 +165,14 @@
 
 (defun typespec-eval--type-category (form)
   "Return the type category of FORM as a symbol, or nil if unknown.
-This function classifies types into categories for efficient comparison."
+This function classifies types into categories for efficient comparison.
+Note: `number' type returns \\='number, not \\='integer or \\='float."
   (cond
    ((typespec-eval--string-type-p form) 'string)
    ((typespec-eval--integer-type-p form) 'integer)
    ((typespec-eval--float-type-p form) 'float)
+   ;; number/real are supertypes of integer and float
+   ((memq form '(number real)) 'number)
    ((typespec-eval--list-type-p form) 'list)
    ((typespec-eval--vector-type-p form) 'vector)
    ((typespec-eval--symbol-type-p form) 'symbol)
@@ -179,26 +182,82 @@ This function classifies types into categories for efficient comparison."
    ((typespec-eval--bool-vector-type-p form) 'bool-vector)
    ((typespec-eval--char-table-type-p form) 'char-table)
    ((typespec-eval--function-type-p form) 'function)
-   ((typespec-eval--record-type-p form) 'record)))
+   ((typespec-eval--record-type-p form) 'record)
+   ;; Other known built-in type symbols
+   ((memq form '(boolean sequence array)) form)))
+
+(defun typespec-eval--type-predicate-name (type-name)
+  "Return the predicate function symbol for TYPE-NAME.
+Follows `cl-typep' priority: TYPE-NAMEp, TYPE-NAME-p, TYPE-NAME.
+Checks for `typespec' property first, then `fboundp'."
+  (when (symbolp type-name)
+    (let* ((name (symbol-name type-name))
+           (namep (intern (concat name "p")))
+           (name-p (intern (concat name "-p"))))
+      (cond
+       ;; Check typespec property first (covers registered but not yet defined)
+       ((function-get namep 'typespec) namep)
+       ((function-get name-p 'typespec) name-p)
+       ((function-get type-name 'typespec) type-name)
+       ;; Fall back to fboundp for runtime-defined functions
+       ((fboundp namep) namep)
+       ((fboundp name-p) name-p)
+       ((fboundp type-name) type-name)))))
+
+(defun typespec-eval--get-guard-return-type (pred-symbol)
+  "Get the :guard or :guard! return type from PRED-SYMBOL's typespec.
+Returns the guard type if found, nil otherwise."
+  (when-let* ((spec (function-get pred-symbol 'typespec))
+              (ret-type (and (eq (car-safe spec) 'function)
+                             (nth 2 spec))))
+    (pcase ret-type
+      (`(:guard ,type) type)
+      (`(:guard! ,type) type)
+      (_ nil))))
+
+(defun typespec-eval--guard-type-base (guard-type)
+  "Return the base type category for GUARD-TYPE.
+For `(rx ...)' types, returns \\='string.
+For symbol types, returns the type-category."
+  (pcase guard-type
+    (`(rx . ,_) 'string)
+    ((pred symbolp) (typespec-eval--type-category guard-type))
+    (_ nil)))
+
+(defun typespec-eval--get-type-base-category (type-name)
+  "Get the base type category for TYPE-NAME via its predicate's typespec.
+Returns nil if no :guard typespec is registered."
+  (when-let* ((pred (typespec-eval--type-predicate-name type-name))
+              (guard-type (typespec-eval--get-guard-return-type pred)))
+    (typespec-eval--guard-type-base guard-type)))
+
+(defun typespec-eval--type-category-with-guard (form)
+  "Return the type category of FORM, including :guard-defined types."
+  (or (typespec-eval--type-category form)
+      (typespec-eval--get-type-base-category form)))
 
 (defun typespec-eval--non-string-type-p (form)
-  "Return non-nil if FORM is a known non-string type."
-  (and-let* ((cat (typespec-eval--type-category form)))
+  "Return non-nil if FORM is a known non-string type.
+Considers :guard-defined types via their base type."
+  (and-let* ((cat (typespec-eval--type-category-with-guard form)))
     (not (eq cat 'string))))
 
 (defun typespec-eval--non-number-type-p (form)
-  "Return non-nil if FORM is a known non-number type."
-  (and-let* ((cat (typespec-eval--type-category form)))
-    (not (memq cat '(integer float)))))
+  "Return non-nil if FORM is a known non-number type.
+Considers :guard-defined types via their base type."
+  (and-let* ((cat (typespec-eval--type-category-with-guard form)))
+    (not (memq cat '(integer float number)))))
 
 (defun typespec-eval--non-list-type-p (form)
-  "Return non-nil if FORM is a known non-list type."
-  (and-let* ((cat (typespec-eval--type-category form)))
+  "Return non-nil if FORM is a known non-list type.
+Considers :guard-defined types via their base type."
+  (and-let* ((cat (typespec-eval--type-category-with-guard form)))
     (not (eq cat 'list))))
 
 (defun typespec-eval--non-vector-type-p (form)
-  "Return non-nil if FORM is a known non-vector type."
-  (and-let* ((cat (typespec-eval--type-category form)))
+  "Return non-nil if FORM is a known non-vector type.
+Considers :guard-defined types via their base type."
+  (and-let* ((cat (typespec-eval--type-category-with-guard form)))
     (not (eq cat 'vector))))
 
 (defsubst typespec-eval--always-non-nil-p (form)
@@ -408,14 +467,26 @@ input."
 
 (defun typespec-eval--eval-predicate (arg pred &optional type-true-p type-false-p)
   "Evaluate predicate PRED over ARG with optional type check.
-TYPE-TRUE-P and TYPE-FALSE-P are predicates over the evaluated type."
-  (let ((arg (typespec-eval--eval arg)))
+TYPE-TRUE-P and TYPE-FALSE-P are predicates over the evaluated type.
+Also considers :guard-defined types via their base type."
+  (let* ((arg (typespec-eval--eval arg))
+         ;; Try to resolve guard type's base category
+         (guard-base (and (symbolp arg)
+                          (typespec-eval--get-type-base-category arg))))
     (cond
      ((typespec-eval--const-p arg)
       (typespec-eval--make-const (funcall pred (typespec-eval--const-value arg))))
      ((and type-true-p (funcall type-true-p arg))
       (typespec-eval--make-const t))
+     ;; Check if guard type's base satisfies the predicate
+     ((and type-true-p guard-base
+           (funcall type-true-p guard-base))
+      (typespec-eval--make-const t))
      ((and type-false-p (funcall type-false-p arg))
+      (typespec-eval--make-const nil))
+     ;; Check if guard type's base is disjoint from the predicate
+     ((and type-true-p guard-base
+           (not (funcall type-true-p guard-base)))
       (typespec-eval--make-const nil))
      (t 'boolean))))
 
