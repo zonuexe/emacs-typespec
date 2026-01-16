@@ -113,6 +113,26 @@
       'string)
      (t (cons 'and items)))))
 
+(defun typespec-eval--map-const-or (arg fn &optional fallback)
+  "Apply FN to const values inside ARG; otherwise return FALLBACK.
+
+ARG should already be evaluated. FN receives an evaluated item and should
+return a `(const ...)` form or nil. If ARG is an `(or ...)` of consts and
+all map successfully, return a simplified `(or ...)` of results."
+  (cond
+   ((and (consp arg) (eq (car arg) 'or))
+    (let ((items nil)
+          (ok t))
+      (dolist (item (cdr arg))
+        (let ((res (funcall fn item)))
+          (if res
+              (push res items)
+            (setq ok nil))))
+      (if ok
+          (typespec-eval--simplify-or (nreverse items))
+        fallback)))
+   (t (or (funcall fn arg) fallback))))
+
 (defun typespec-eval--literal-const (form)
   "Return a `(const VALUE)` for literal constants in FORM, or nil."
   (cond
@@ -167,36 +187,35 @@
 
 (defun typespec-eval--eval-upcase (arg)
   "Evaluate an `upcase` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
+  (let* ((arg (typespec-eval--eval arg))
+         (mapped
+          (typespec-eval--map-const-or
+           arg
+           (lambda (item)
+             (when (and (typespec-eval--const-p item)
+                        (or (stringp (typespec-eval--const-value item))
+                            (characterp (typespec-eval--const-value item))))
+               (typespec-eval--make-const
+                (upcase (typespec-eval--const-value item))))))))
     (cond
-     ((and (typespec-eval--const-p arg)
-           (or (stringp (typespec-eval--const-value arg))
-               (characterp (typespec-eval--const-value arg))))
-      (typespec-eval--make-const
-       (upcase (typespec-eval--const-value arg))))
+     (mapped mapped)
      ((eq arg 'string) 'string)
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-to-number (arg)
   "Evaluate a `string-to-number` expression over ARG."
-  (let ((arg (typespec-eval--eval arg)))
+  (let* ((arg (typespec-eval--eval arg))
+         (mapped
+          (typespec-eval--map-const-or
+           arg
+           (lambda (item)
+             (when (and (typespec-eval--const-p item)
+                        (stringp (typespec-eval--const-value item)))
+               (typespec-eval--make-const
+                (string-to-number (typespec-eval--const-value item))))))))
     (cond
-     ((and (typespec-eval--const-p arg)
-           (stringp (typespec-eval--const-value arg)))
-      (typespec-eval--make-const
-       (string-to-number (typespec-eval--const-value arg))))
+     (mapped mapped)
      ((eq arg 'string) 'number)
-     ((and (consp arg) (eq (car arg) 'or))
-      (let ((items nil)
-            (ok t))
-        (dolist (item (cdr arg))
-          (let ((res (typespec-eval--eval-string-to-number item)))
-            (if (and (consp res) (eq (car res) 'const))
-                (push res items)
-              (setq ok nil))))
-        (if ok
-            (typespec-eval--simplify-or (nreverse items))
-          'number)))
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-equal (lhs rhs)
@@ -205,29 +224,23 @@
         (rhs (typespec-eval--eval rhs)))
     (cond
      ((and (consp lhs) (eq (car lhs) 'or))
-      (let ((items nil)
-            (ok t))
-        (dolist (item (cdr lhs))
-          (let ((res (typespec-eval--eval-string-equal item rhs)))
-            (if (or (eq res 'boolean)
-                    (and (consp res) (eq (car res) 'const)))
-                (push res items)
-              (setq ok nil))))
-        (if ok
-            (typespec-eval--simplify-or (nreverse items))
-          'boolean)))
+      (let ((mapped
+             (typespec-eval--map-const-or
+              lhs
+              (lambda (item)
+                (let ((res (typespec-eval--eval-string-equal item rhs)))
+                  (and (consp res) (eq (car res) 'const) res)))
+              'boolean)))
+        (or mapped 'boolean)))
      ((and (consp rhs) (eq (car rhs) 'or))
-      (let ((items nil)
-            (ok t))
-        (dolist (item (cdr rhs))
-          (let ((res (typespec-eval--eval-string-equal lhs item)))
-            (if (or (eq res 'boolean)
-                    (and (consp res) (eq (car res) 'const)))
-                (push res items)
-              (setq ok nil))))
-        (if ok
-            (typespec-eval--simplify-or (nreverse items))
-          'boolean)))
+      (let ((mapped
+             (typespec-eval--map-const-or
+              rhs
+              (lambda (item)
+                (let ((res (typespec-eval--eval-string-equal lhs item)))
+                  (and (consp res) (eq (car res) 'const) res)))
+              'boolean)))
+        (or mapped 'boolean)))
      ((and (typespec-eval--const-p lhs)
            (typespec-eval--const-p rhs)
            (stringp (typespec-eval--const-value lhs))
@@ -246,29 +259,23 @@
         (ignore-case (when ignore-case (typespec-eval--eval ignore-case))))
     (cond
      ((and (consp prefix) (eq (car prefix) 'or))
-      (let ((items nil)
-            (ok t))
-        (dolist (item (cdr prefix))
-          (let ((res (typespec-eval--eval-string-prefix-p item string ignore-case)))
-            (if (or (eq res 'boolean)
-                    (and (consp res) (eq (car res) 'const)))
-                (push res items)
-              (setq ok nil))))
-        (if ok
-            (typespec-eval--simplify-or (nreverse items))
-          'boolean)))
+      (let ((mapped
+             (typespec-eval--map-const-or
+              prefix
+              (lambda (item)
+                (let ((res (typespec-eval--eval-string-prefix-p item string ignore-case)))
+                  (and (consp res) (eq (car res) 'const) res)))
+              'boolean)))
+        (or mapped 'boolean)))
      ((and (consp string) (eq (car string) 'or))
-      (let ((items nil)
-            (ok t))
-        (dolist (item (cdr string))
-          (let ((res (typespec-eval--eval-string-prefix-p prefix item ignore-case)))
-            (if (or (eq res 'boolean)
-                    (and (consp res) (eq (car res) 'const)))
-                (push res items)
-              (setq ok nil))))
-        (if ok
-            (typespec-eval--simplify-or (nreverse items))
-          'boolean)))
+      (let ((mapped
+             (typespec-eval--map-const-or
+              string
+              (lambda (item)
+                (let ((res (typespec-eval--eval-string-prefix-p prefix item ignore-case)))
+                  (and (consp res) (eq (car res) 'const) res)))
+              'boolean)))
+        (or mapped 'boolean)))
      ((and (typespec-eval--const-p prefix)
            (typespec-eval--const-p string)
            (stringp (typespec-eval--const-value prefix))
