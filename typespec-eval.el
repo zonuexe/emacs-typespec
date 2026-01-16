@@ -397,6 +397,12 @@ all map successfully, return a simplified `(or ...)` of results."
   (pcase form
     ((pred typespec-eval--literal-const)
      (typespec-eval--literal-const form))
+    (`(or . ,args)
+     (typespec-eval--simplify-or (mapcar #'typespec-eval--eval args)))
+    (`(list+ ,type)
+     (list 'list+ (typespec-eval--eval type)))
+    (`(list ,type)
+     (list 'list (typespec-eval--eval type)))
     (`(and . ,args)
      (typespec-eval--eval-and args))
     (`(not ,arg)
