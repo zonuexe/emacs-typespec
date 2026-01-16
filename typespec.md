@@ -40,10 +40,10 @@ TYPE ::= symbol
        | (and TYPE...)
        | (not TYPE)
        | (diff TYPE TYPE)
-       | (function (TYPE...) TYPE)
-       | (function (TYPE...) (:guard TYPE))
-       | (function (TYPE...) (:guard! TYPE))
-       | (function (TYPE...) (:assert TYPE))
+       | (function ARGS TYPE)
+       | (function ARGS (:guard TYPE))
+       | (function ARGS (:guard! TYPE))
+       | (function ARGS (:assert TYPE))
        | (if PRED TYPE TYPE)
        | (list TYPE)
        | (list+ TYPE)
@@ -67,6 +67,16 @@ TYPE ::= symbol
        | (var SYMBOL)
        | (plist-key-of PLIST)
        | (plist-value-of PLIST)
+
+ARGS ::= (ARGSPEC...)
+
+ARGSPEC ::= TYPE
+          | &optional TYPE...
+          | &rest TYPE
+          | &keys KEYSPEC
+
+KEYSPEC ::= (:plist-of ENTRY...)
+          | TYPE
 
 ENTRY ::= (KEY TYPE)
        | (:? KEY TYPE)
@@ -108,6 +118,13 @@ Notes:
 - `boolean`/`bool` is the set `{t, nil}`.
 - `character` corresponds to `(integer 0 (max-char))`, i.e. 0..4194304.
 
+Example usage:
+
+```emacs-lisp
+;; A function that never returns normally.
+(typespec #'error (function (&rest mixed) never))
+```
+
 ### Elsa-inspired types
 
 - `unknown` — the *top type*: accepts anything, but is not implicitly
@@ -135,6 +152,12 @@ Example usage:
   meaning (it may be `nil` or non-`nil` arbitrarily). `void` is distinct
   from `unknown`: `unknown` can be refined via guards, while `void`
   should not be consumed or cast.
+
+Example usage:
+
+```emacs-lisp
+(typespec #'message (function (string &rest mixed) void))
+```
 
 ## What counts as a “type”
 
@@ -173,13 +196,24 @@ compatibility and because they are logical operators rather than base types.
 `(diff A B)` does not require `B` to be a subtype of `A`; it is simply
 “values in `A` that are not in `B`”.
 
+Example usage:
+
+```emacs-lisp
+;; Any non-nil value.
+(diff mixed nil)
+
+;; Any value that is not a string.
+(not string)
+```
+
 ## Function Types
 
 `(function (A1 A2 ...) R)` for functions with positional arguments.
 
-Optional future extension:
-
-- keyword args or rest args, e.g. `(function (A1 &optional A2 &rest R) R)`.
+The argument list uses a `defun`-style order: positional args, then
+`&optional`, then `&rest`, then `&keys`. `&keys` accepts either a plist
+shape (typically `(:plist-of ...)`) or a broader plist type such as
+`(:plist keyword mixed)`.
 
 ## Polymorphism (Conceptual)
 
@@ -286,6 +320,12 @@ Form:
 (if PRED THEN ELSE)
 ```
 
+PRED is an s-expression built from the allowed operators and operands.
+It is **not** evaluated at runtime; it is used only by type checkers to
+refine types for THEN/ELSE. Implementations should treat PRED as a pure
+expression with no side effects. A predicate that uses disallowed forms
+or operands is invalid and should be rejected.
+
 Example:
 
 ```emacs-lisp
@@ -295,6 +335,15 @@ Example:
         (:assert string)
       (:guard string))))
 ```
+
+Explanation:
+- `&keys` represents the keyword-argument plist passed to `is-string`.
+- The predicate `(plist-get &keys :assert)` is evaluated by the type checker
+  (not at runtime) to choose between two return-type behaviors.
+- If the caller passes `:assert t`, the return type is treated as `:assert`,
+  meaning the argument is refined on success and an error is expected on failure.
+- Otherwise the return type is treated as `:guard`, meaning it only refines on
+  the true branch and does not imply the false branch complement.
 
 ### Argument Tuples and `value-of`
 
@@ -306,7 +355,8 @@ Example:
 
 `(value-of (:tuple T1 T2 ...))` is defined as `(or T1 T2 ...)`.
 This allows types like `or` to describe “returns one of its arguments”
-without naming each argument.
+without naming each argument. Use `value-of` when you want to treat a
+tuple (or proper list) as a set of *choices*.
 
 If a proper list is supplied, it is treated as `(:tuple ...)` for this
 purpose. For dotted tuples, `value-of` includes the tail type as an additional
@@ -327,10 +377,28 @@ broader, user-chosen target type (for example `integer` or `positive-int`).
 This is intended for cases where the strictest checker would infer a literal
 type, but you want to declare a usable supertype instead.
 
+Example usage:
+
+```emacs-lisp
+;; A predicate that returns a literal when true; generalize it for usability.
+(typespec #'okp
+  (function (unknown) (generalize (const t) boolean)))
+```
+
 ### `list+` (non-empty list)
 
 `(list+ T)` describes a proper list with at least one element of type `T`.
 It is shorthand for `(cons T (list T))`.
+
+Example usage:
+
+```emacs-lisp
+;; Requires at least one element.
+(typespec #'first (function ((list+ integer)) integer))
+
+;; Accepts empty lists as well.
+(typespec #'safe-first (function ((list integer)) (or integer nil)))
+```
 
 ### `generalize-signed` (sign-preserving widening)
 
@@ -344,13 +412,43 @@ It is shorthand for `(cons T (list T))`.
 - `integer`/`float`/`number` => unchanged
 - `unknown`/`mixed` => `never`
 
-The `unknown`/`mixed` case intentionally fails closed; use a separate
-downcast helper if you want to relax that constraint.
-This prevents accidental widening from an unknown value into a signed
-refinement that would be unjustified. The practical impact is that
-`generalize-signed` is only safe for literal or already-numeric inputs;
-if you apply it to `unknown`/`mixed`, the result becomes uninhabited
-and any use should be treated as impossible or a type error.
+The `unknown`/`mixed` case intentionally **fails closed**. Here, “fails
+closed” means the type checker does not guess a looser numeric type when
+there is insufficient information; it returns the empty type instead.
+“Uninhabited” in this spec means the same as `never`: no values satisfy
+that type.
+
+This is a **type-safety** choice. Allowing `unknown` to become a signed
+refinement would assert information that is not justified by the input,
+which can hide bugs. The practical impact is that `generalize-signed` is
+only safe for literal or already-numeric inputs; if you apply it to
+`unknown`/`mixed`, the result becomes `never`, and a type checker should
+report an error if that value is used where a real value is required.
+This is a compile-time/type-checking concern, not a runtime error.
+
+Example (failure case):
+
+```emacs-lisp
+;; Bad: the return becomes `never`, so callers should get a type error.
+(typespec #'some-func
+  (function (unknown) (generalize-signed unknown)))
+```
+
+Example (use downcast to override):
+
+```emacs-lisp
+;; Explicitly assert a numeric type when you have out-of-band knowledge.
+(typespec #'some-func
+  (function (unknown) (downcast unknown number)))
+```
+
+Example usage:
+
+```emacs-lisp
+;; Preserve sign when widening.
+(typespec #'negate
+  (function (number) (generalize-signed (const -1))))
+```
 
 ### `downcast` (explicit type assertion)
 
@@ -358,6 +456,14 @@ and any use should be treated as impossible or a type error.
 escape hatch, similar to a type assertion, and should be used sparingly.
 Unlike `generalize`, `downcast` does not imply that `T` is a subtype of
 `TARGET`; it simply asserts that it should be treated as such.
+
+Example usage:
+
+```emacs-lisp
+;; Force a narrower type when you have out-of-band knowledge.
+(typespec #'trust-int
+  (function (unknown) (downcast unknown integer)))
+```
 
 ### `rx` (regexp via `rx` syntax)
 
@@ -399,6 +505,17 @@ This is a pragmatic escape hatch intended for real-world dynamic code where
 exact type boundaries are difficult to enforce. Use it sparingly and only when
 the trade-off is acceptable.
 
+Example usage:
+
+```emacs-lisp
+;; Allow a pragmatic widening for real-world numeric results.
+;; For example, multiplying a large fixnum can produce a bignum or
+;; exceed a narrow `positive-int` expectation; `benevolent` avoids
+;; flagging those cases as errors.
+(typespec #'times2
+  (function (number) (benevolent positive-int)))
+```
+
 ### Variable types (`var`) and constant values
 
 `(var SYMBOL)` refers to the type of a Lisp variable by name.
@@ -414,6 +531,8 @@ Example:
 (defconst orders '(asc desc))
 (var 'orders)
 ;; => (:tuple (const asc) (const desc))
+(value-of (var 'orders))
+;; => (or (const asc) (const desc))
 
 (defun my-sorted-list (items order)
   "Return ITEMS sorted by ORDER."
@@ -452,6 +571,18 @@ Example with fixed keys:
              (:name string)
              (:age non-negative-int)
              (:? :nickname string))))
+```
+
+Example with `plist-key-of` / `plist-value-of`:
+
+```emacs-lisp
+;; Return the keys of a plist.
+(typespec #'plist-keys
+  (function (&keys) (list (plist-key-of &keys))))
+
+;; Return the values of a plist.
+(typespec #'plist-values
+  (function (&keys) (list (plist-value-of &keys))))
 ```
 
 ### Keyed plists (array-shapes)
@@ -549,6 +680,13 @@ Example usage:
 ;; Cons-chain tuple: (a . (b . c)) where c is not necessarily a list.
 (typespec #'cons-chain
   (function (unknown unknown unknown) (:tuple unknown unknown . unknown)))
+
+;; Concrete dotted tuple example.
+;; Value shape: (cons 'asc (cons 42 'done))
+;; This is useful when the tail is *not* a proper list; it lets you
+;; describe a fixed-length cons chain that ends in a non-list atom.
+(typespec #'make-status
+  (function (unknown) (:tuple (const asc) integer . (const done))))
 ```
 
 ## Constant Types
