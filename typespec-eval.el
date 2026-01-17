@@ -42,6 +42,12 @@
   "Return the VALUE from a `(const VALUE)` FORM."
   (cadr form))
 
+(defsubst typespec-eval--unconst (form)
+  "Return FORM without a const wrapper when possible."
+  (if (typespec-eval--const-p form)
+      (typespec-eval--const-value form)
+    form))
+
 (defsubst typespec-eval--make-const (value)
   "Return a `(const VALUE)` expression."
   (list 'const value))
@@ -872,6 +878,15 @@ TYPE-PRED is an optional predicate to check evaluated types."
           (typespec-eval--eval-tuple (cdr args))))
    ((null args) nil)
    (t (typespec-eval--eval args))))
+
+(defun typespec-eval--tuple-unconst (args)
+  "Return ARGS with const-wrapped elements unwrapped."
+  (cond
+   ((consp args)
+    (cons (typespec-eval--unconst (car args))
+          (typespec-eval--tuple-unconst (cdr args))))
+   ((null args) nil)
+   (t (typespec-eval--unconst args))))
 
 (defun typespec-eval--eval-string-width (arg)
   "Evaluate a `string-width` expression over ARG."
@@ -2180,11 +2195,23 @@ When N is 1, behaves like `cdr`."
          (list (typespec-eval--eval list))
          (nval (typespec-eval--const-integer-value n)))
     (cond
+     ((and (typespec-eval--always-nil-p list) (integerp nval))
+      'nil)
      ((and (typespec-eval--const-p list) (integerp nval))
       (let ((val (typespec-eval--const-value list)))
         (if (listp val)
-            (typespec-eval--make-const (nthcdr nval val))
+            (if (null val)
+                'nil
+              (typespec-eval--make-const (nthcdr nval val)))
           'unknown)))
+     ((and (consp list) (eq (car list) :tuple) (integerp nval))
+      (let ((tuple (typespec-eval--tuple-unconst (cdr list))))
+        (if (<= nval 0)
+            (cons :tuple tuple)
+          (let ((tail (nthcdr nval tuple)))
+            (if (listp tail)
+                (cons :tuple tail)
+              (typespec-eval--eval (cdr list)))))))
      ((typespec-eval--list-elem-type list)
       (list 'list (typespec-eval--list-elem-type list)))
      (t 'unknown))))
