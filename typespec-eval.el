@@ -593,7 +593,14 @@ RESULT-TYPE is returned when both arguments are string types."
                 (typespec-eval--const-value rhs))))
      ((and (typespec-eval--number-type-p lhs)
            (typespec-eval--number-type-p rhs))
-      'boolean)
+      (let* ((lhs-info (typespec-eval--numeric-range-info lhs))
+             (rhs-info (typespec-eval--numeric-range-info rhs))
+             (result (and lhs-info rhs-info
+                          (typespec-eval--numeric-range-compare lhs-info rhs-info pred))))
+        (cond
+         ((and lhs-info rhs-info (eq result t)) (typespec-eval--make-const t))
+         ((and lhs-info rhs-info (eq result nil)) (typespec-eval--make-const nil))
+         (t 'boolean))))
      (t 'unknown))))
 
 (defun typespec-eval--eval-string-unary (arg fn &optional preserve-non-empty)
@@ -750,6 +757,23 @@ TYPE-PRED is an optional predicate to check evaluated types."
       (typespec-eval--make-const
        (funcall fn (typespec-eval--const-value lhs)
                 (typespec-eval--const-value rhs))))
+     ((and value-pred type-pred
+           (eq value-pred #'numberp)
+           (funcall type-pred lhs)
+           (funcall type-pred rhs))
+      (let* ((lhs-info (typespec-eval--numeric-range-info lhs))
+             (rhs-info (typespec-eval--numeric-range-info rhs)))
+        (cond
+         ((and lhs-info rhs-info
+               (typespec-eval--numeric-range-disjoint-p lhs-info rhs-info))
+          (typespec-eval--make-const nil))
+         ((and lhs-info rhs-info
+               (typespec-eval--numeric-range-singleton-p lhs-info)
+               (typespec-eval--numeric-range-singleton-p rhs-info))
+          (typespec-eval--make-const
+           (funcall fn (plist-get lhs-info :low)
+                    (plist-get rhs-info :low))))
+         (t 'boolean))))
      ;; type check for specialized comparisons
      ((and type-pred
            (funcall type-pred lhs)
@@ -1294,6 +1318,100 @@ STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
    ((typespec-eval--integer-type-p form)
     (typespec-eval--float-range '* '*))
    (t nil)))
+
+(defsubst typespec-eval--numeric-range-info (form)
+  "Return numeric range info plist for FORM."
+  (cond
+   ((typespec-eval--const-p form)
+    (let ((val (typespec-eval--const-value form)))
+      (when (numberp val)
+        (list :low val :high val :low-excl nil :high-excl nil))))
+   (t
+    (let ((irange (typespec-eval--integer-range-from form)))
+      (if irange
+          (let ((low (typespec-eval--integer-bound-min (cadr irange)))
+                (high (typespec-eval--integer-bound-max (caddr irange))))
+            (list :low low :high high :low-excl nil :high-excl nil))
+        (let ((frange (typespec-eval--float-range-from form)))
+          (when frange
+            (let* ((low (cadr frange))
+                   (high (caddr frange))
+                   (lowv (typespec-eval--float-bound-value low))
+                   (highv (typespec-eval--float-bound-value high))
+                   (low-excl (typespec-eval--float-bound-exclusive-p low))
+                   (high-excl (typespec-eval--float-bound-exclusive-p high)))
+              (list :low lowv :high highv
+                    :low-excl low-excl :high-excl high-excl)))))))))
+
+(defsubst typespec-eval--numeric-range-singleton-p (info)
+  "Return non-nil if INFO describes a single numeric value."
+  (let ((low (plist-get info :low))
+        (high (plist-get info :high)))
+    (and (numberp low)
+         (numberp high)
+         (= low high)
+         (not (plist-get info :low-excl))
+         (not (plist-get info :high-excl)))))
+
+(defsubst typespec-eval--numeric-range-disjoint-p (lhs rhs)
+  "Return non-nil if numeric ranges LHS and RHS are disjoint."
+  (let ((lhigh (plist-get lhs :high))
+        (lhigh-excl (plist-get lhs :high-excl))
+        (llow (plist-get lhs :low))
+        (llow-excl (plist-get lhs :low-excl))
+        (rhigh (plist-get rhs :high))
+        (rhigh-excl (plist-get rhs :high-excl))
+        (rlow (plist-get rhs :low))
+        (rlow-excl (plist-get rhs :low-excl)))
+    (or (and (numberp lhigh) (numberp rlow)
+             (or (< lhigh rlow)
+                 (and (= lhigh rlow) (or lhigh-excl rlow-excl))))
+        (and (numberp rhigh) (numberp llow)
+             (or (< rhigh llow)
+                 (and (= rhigh llow) (or rhigh-excl llow-excl)))))))
+
+(defsubst typespec-eval--numeric-range-compare (lhs rhs pred)
+  "Return t/nil if PRED is decidable for LHS and RHS, else `unknown`."
+  (let ((llow (plist-get lhs :low))
+        (llow-excl (plist-get lhs :low-excl))
+        (lhigh (plist-get lhs :high))
+        (lhigh-excl (plist-get lhs :high-excl))
+        (rlow (plist-get rhs :low))
+        (rlow-excl (plist-get rhs :low-excl))
+        (rhigh (plist-get rhs :high))
+        (rhigh-excl (plist-get rhs :high-excl)))
+    (cond
+     ((eq pred #'<)
+      (cond
+       ((and (numberp lhigh) (numberp rlow)
+             (or (< lhigh rlow)
+                 (and (= lhigh rlow) (or lhigh-excl rlow-excl))))
+        t)
+       ((and (numberp llow) (numberp rhigh)
+             (>= llow rhigh))
+        nil)
+       (t 'unknown)))
+     ((eq pred #'>)
+      (typespec-eval--numeric-range-compare rhs lhs #'<))
+     ((eq pred #'<=)
+      (cond
+       ((and (numberp lhigh) (numberp rlow)
+             (<= lhigh rlow))
+        t)
+       ((and (numberp llow) (numberp rhigh)
+             (> llow rhigh))
+        nil)
+       (t 'unknown)))
+     ((eq pred #'>=)
+      (typespec-eval--numeric-range-compare rhs lhs #'<=))
+     ((eq pred #'/=)
+      (cond
+       ((and (typespec-eval--numeric-range-singleton-p lhs)
+             (typespec-eval--numeric-range-singleton-p rhs))
+        (not (= llow rlow)))
+       ((typespec-eval--numeric-range-disjoint-p lhs rhs) t)
+       (t 'unknown)))
+     (t 'unknown))))
 
 (defsubst typespec-eval--float-range-abs (range)
   "Return the absolute-value range for RANGE."
