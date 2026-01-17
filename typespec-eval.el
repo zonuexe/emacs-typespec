@@ -2020,7 +2020,6 @@ ZERO-VALUE is used when ARGS is empty."
      ((seq-every-p #'typespec-eval--integer-type-p args) 'integer)
      (t 'unknown))))
 
-
 (defun typespec-eval--eval-ash (value count)
   "Evaluate an `ash` expression for VALUE and COUNT."
   (let ((value (typespec-eval--eval value))
@@ -2040,7 +2039,6 @@ ZERO-VALUE is used when ARGS is empty."
            (typespec-eval--integer-type-p count))
       'integer)
      (t 'unknown))))
-
 
 (defun typespec-eval--eval-number-sequence (from &optional to inc)
   "Evaluate a `number-sequence` expression for FROM, TO, and INC."
@@ -2265,7 +2263,7 @@ FN is applied to const values; the type structure is preserved for typed args."
         (if (listp val)
             (typespec-eval--make-const (last val nval))
           'unknown)))
-     ((eq (car-safe list) 'list+)
+    ((eq (car-safe list) 'list+)
       (cond
        ((null n) (list 'list+ (cadr list)))
        ((and (integerp nval) (< nval 0)) (typespec-eval--make-const nil))
@@ -2302,26 +2300,35 @@ FN is applied to const values; the type structure is preserved for typed args."
        (t (list 'list (cadr list)))))
      (t 'unknown))))
 
-(defun typespec-eval--eval-assoc (key alist &optional eqp)
-  "Evaluate an `assoc`/`assq` expression for KEY, ALIST, and EQP."
-  (let* ((key (typespec-eval--eval key))
-         (alist (typespec-eval--eval alist))
-         (key-type (typespec-eval--alist-key-type alist)))
+(defun typespec-eval--eval-alist-search (search-item alist search-key-p compare-fn)
+  "Evaluate alist search expression.
+SEARCH-ITEM is the key or value to search for.
+ALIST is the alist to search in.
+SEARCH-KEY-P is non-nil to search by key, nil to search by value.
+COMPARE-FN is the comparison function (#\\='eq or #\\='equal)."
+  (let* ((search-item (typespec-eval--eval search-item))
+         (alist (typespec-eval--eval alist)))
     (cond
-     ((and (typespec-eval--const-p key) (typespec-eval--const-p alist))
-      (let ((val (typespec-eval--const-value alist)))
-        (if (listp val)
+     ((and (typespec-eval--const-p search-item) (typespec-eval--const-p alist))
+      (let ((alist-val (typespec-eval--const-value alist))
+            (item-val (typespec-eval--const-value search-item)))
+        (if (listp alist-val)
             (typespec-eval--make-const
-             (if eqp
-                 (assq (typespec-eval--const-value key) val)
-               (assoc (typespec-eval--const-value key) val)))
+             (if search-key-p
+                 (if (eq compare-fn #'eq)
+                     (assq item-val alist-val)
+                   (assoc item-val alist-val))
+               (if (eq compare-fn #'eq)
+                   (rassq item-val alist-val)
+                 (rassoc item-val alist-val))))
           'unknown)))
      ((typespec-eval--alist-type-p alist)
       (typespec-eval--simplify-or
        (list (typespec-eval--make-const nil)
-             (cons :tuple (cons key-type
+             (cons :tuple (cons (typespec-eval--alist-key-type alist)
                                 (typespec-eval--alist-value-type alist))))))
      (t 'unknown))))
+
 
 (defun typespec-eval--eval-assoc-default (key alist &optional test default)
   "Evaluate an `assoc-default` expression for KEY, ALIST, TEST, and DEFAULT."
@@ -2380,41 +2387,6 @@ REMOVE is ignored in the type evaluator."
            (list (typespec-eval--make-const nil) value-type)))))
      (t 'unknown))))
 
-(defun typespec-eval--eval-rassq (value alist)
-  "Evaluate a `rassq` expression for VALUE and ALIST."
-  (let* ((value (typespec-eval--eval value))
-         (alist (typespec-eval--eval alist)))
-    (cond
-     ((and (typespec-eval--const-p value) (typespec-eval--const-p alist))
-      (let ((alist-val (typespec-eval--const-value alist)))
-        (if (listp alist-val)
-            (typespec-eval--make-const (rassq (typespec-eval--const-value value)
-                                              alist-val))
-          'unknown)))
-     ((typespec-eval--alist-type-p alist)
-      (typespec-eval--simplify-or
-       (list (typespec-eval--make-const nil)
-             (cons :tuple (cons (typespec-eval--alist-key-type alist)
-                                (typespec-eval--alist-value-type alist))))))
-     (t 'unknown))))
-
-(defun typespec-eval--eval-rassoc (value alist)
-  "Evaluate a `rassoc` expression for VALUE and ALIST."
-  (let* ((value (typespec-eval--eval value))
-         (alist (typespec-eval--eval alist)))
-    (cond
-     ((and (typespec-eval--const-p value) (typespec-eval--const-p alist))
-      (let ((alist-val (typespec-eval--const-value alist)))
-        (if (listp alist-val)
-            (typespec-eval--make-const (rassoc (typespec-eval--const-value value)
-                                               alist-val))
-          'unknown)))
-     ((typespec-eval--alist-type-p alist)
-      (typespec-eval--simplify-or
-       (list (typespec-eval--make-const nil)
-             (cons :tuple (cons (typespec-eval--alist-key-type alist)
-                                (typespec-eval--alist-value-type alist))))))
-     (t 'unknown))))
 
 (defun typespec-eval--eval-plist-get (plist key &optional default)
   "Evaluate a `plist-get` expression for PLIST, KEY, and DEFAULT."
@@ -2725,7 +2697,6 @@ If LIST-ONLY is non-nil, only handle list types."
              (list 'list (typespec-eval--list-elem-type list)))))
      (t 'unknown))))
 
-
 (defun typespec-eval--eval-copy-tree (tree &optional vectors-and-records)
   "Evaluate a `copy-tree` expression for TREE and VECTORS-AND-RECORDS."
   (let ((tree (typespec-eval--eval tree))
@@ -2807,7 +2778,6 @@ If LIST-ONLY is non-nil, only handle list types."
      ((seq-every-p #'typespec-eval--float-type-p args) 'float)
      ((seq-every-p #'typespec-eval--number-type-p args) 'number)
      (t 'unknown))))
-
 
 (defun typespec-eval--eval-length (arg)
   "Evaluate a `length` expression over ARG."
@@ -3378,17 +3348,17 @@ If LIST-ONLY is non-nil, only handle list types."
     (`(butlast ,list . ,rest)
      (typespec-eval--eval-butlast list (car rest)))
     (`(assoc ,key ,alist)
-     (typespec-eval--eval-assoc key alist))
+     (typespec-eval--eval-alist-search key alist t #'equal))
     (`(assq ,key ,alist)
-     (typespec-eval--eval-assoc key alist t))
+     (typespec-eval--eval-alist-search key alist t #'eq))
     (`(rassoc ,value ,alist)
-     (typespec-eval--eval-rassoc value alist))
+     (typespec-eval--eval-alist-search value alist nil #'equal))
     (`(alist-get ,key ,alist . ,rest)
      (typespec-eval--eval-alist-get key alist (car rest) (cadr rest) (caddr rest)))
     (`(assoc-default ,key ,alist . ,rest)
      (typespec-eval--eval-assoc-default key alist (car rest) (cadr rest)))
     (`(rassq ,value ,alist)
-     (typespec-eval--eval-rassq value alist))
+     (typespec-eval--eval-alist-search value alist nil #'eq))
     (`(assoc-delete-all ,key ,alist . ,rest)
      (typespec-eval--eval-assoc-delete-all key alist (car rest)))
     (`(assq-delete-all ,key ,alist)
@@ -3571,7 +3541,7 @@ If LIST-ONLY is non-nil, only handle list types."
      (typespec-eval--eval-const-fold arg #'lognot #'integerp nil 'integer #'typespec-eval--integer-type-p))
     (`(logcount ,arg)
      (typespec-eval--eval-const-fold arg #'logcount #'integerp nil '(integer 0 *)
-                                   #'typespec-eval--integer-type-p))
+                        #'typespec-eval--integer-type-p))
     (`(ash ,value ,count)
      (typespec-eval--eval-ash value count))
     (`(zerop ,arg)
