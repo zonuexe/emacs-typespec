@@ -840,6 +840,41 @@ TYPE-PRED is an optional predicate to check evaluated types."
   "Return the value type of an alist type VALUE."
   (caddr value))
 
+(defsubst typespec-eval--cons-type-p (form)
+  "Return non-nil if FORM is a cons cell type."
+  (and (consp form)
+       (eq (car form) 'cons)
+       (consp (cdr form))
+       (consp (cddr form))
+       (null (cdddr form))))
+
+(defsubst typespec-eval--cons-key-type (form)
+  "Return the key type of a cons FORM."
+  (cadr form))
+
+(defsubst typespec-eval--cons-value-type (form)
+  "Return the value type of a cons FORM."
+  (caddr form))
+
+(defun typespec-eval--alist-entry-types (form)
+  "Return (KEY . VALUE) for an alist entry type FORM, or nil."
+  (cond
+   ((typespec-eval--cons-type-p form)
+    (cons (typespec-eval--cons-key-type form)
+          (typespec-eval--cons-value-type form)))
+   ((and (consp form) (eq (car form) :tuple))
+    (let* ((parts (typespec-eval--tuple-split (cdr form)))
+           (prefix (car parts))
+           (tail (cdr parts)))
+      (and tail (= (length prefix) 1)
+           (cons (car prefix) tail))))
+   ((typespec-eval--const-p form)
+    (let ((val (typespec-eval--const-value form)))
+      (when (consp val)
+        (cons (typespec-eval--make-const (car val))
+              (typespec-eval--make-const (cdr val))))))
+   (t nil)))
+
 (defsubst typespec-eval--plist-type-p (value)
   "Return non-nil if VALUE is a plist type."
   (and (consp value)
@@ -2474,6 +2509,113 @@ FN is applied to const values; the type structure is preserved for typed args."
        (t (list 'list (cadr list)))))
      (t 'unknown))))
 
+(defun typespec-eval--eval-cons (car cdr)
+  "Evaluate a `cons` expression for CAR and CDR."
+  (let* ((car (typespec-eval--eval car))
+         (cdr (typespec-eval--eval cdr))
+         (entry (typespec-eval--alist-entry-types car)))
+    (cond
+     ((and (typespec-eval--const-p car) (typespec-eval--const-p cdr))
+      (typespec-eval--make-const
+       (cons (typespec-eval--const-value car)
+             (typespec-eval--const-value cdr))))
+     ((typespec-eval--list-elem-type cdr)
+      (list 'list+
+            (typespec-eval--simplify-or
+             (list car (typespec-eval--list-elem-type cdr)))))
+     ((typespec-eval--always-nil-p cdr)
+      (list 'list+ car))
+     ((and (typespec-eval--alist-type-p cdr) entry)
+      (list :alist
+            (typespec-eval--simplify-or
+             (list (car entry) (typespec-eval--alist-key-type cdr)))
+            (typespec-eval--simplify-or
+             (list (cdr entry) (typespec-eval--alist-value-type cdr)))))
+     (t (list 'cons car cdr)))))
+
+(defun typespec-eval--eval-list (args)
+  "Evaluate a `list` expression over ARGS."
+  (let ((args (mapcar #'typespec-eval--eval args)))
+    (cond
+     ((null args) (typespec-eval--make-const nil))
+     ((seq-every-p #'typespec-eval--const-p args)
+      (typespec-eval--make-const
+       (mapcar #'typespec-eval--const-value args)))
+     (t
+      (let* ((entries (mapcar #'typespec-eval--alist-entry-types args))
+             (all-entries (and (seq-every-p #'identity entries) entries)))
+        (cond
+         (all-entries
+          (list :alist
+                (typespec-eval--simplify-or (mapcar #'car entries))
+                (typespec-eval--simplify-or (mapcar #'cdr entries))))
+         ((and (zerop (mod (length args) 2))
+               (seq-every-p (lambda (arg) (not (typespec-eval--const-p arg))) args))
+          (let ((keys nil)
+                (values nil)
+                (idx 0))
+            (dolist (arg args)
+              (if (cl-evenp idx)
+                  (push arg keys)
+                (push arg values))
+              (setq idx (1+ idx)))
+            (list :plist
+                  (typespec-eval--simplify-or (nreverse keys))
+                  (typespec-eval--simplify-or (nreverse values)))))
+         (t
+          (list 'list+
+                (typespec-eval--simplify-or args)))))))))
+
+(defun typespec-eval--eval-append (args)
+  "Evaluate an `append` expression over ARGS."
+  (let ((args (mapcar #'typespec-eval--eval args)))
+    (cond
+     ((null args) (typespec-eval--make-const nil))
+     ((seq-every-p #'typespec-eval--const-p args)
+      (typespec-eval--make-const
+       (apply #'append (mapcar #'typespec-eval--const-value args))))
+     ((seq-every-p #'typespec-eval--alist-type-p args)
+      (list :alist
+            (typespec-eval--simplify-or
+             (mapcar #'typespec-eval--alist-key-type args))
+            (typespec-eval--simplify-or
+             (mapcar #'typespec-eval--alist-value-type args))))
+     ((seq-every-p #'typespec-eval--plist-type-p args)
+      (list :plist
+            (typespec-eval--simplify-or
+             (mapcar #'typespec-eval--plist-key-type args))
+            (typespec-eval--simplify-or
+             (mapcar #'typespec-eval--plist-value-type args))))
+     (t
+      (let* ((elems nil)
+             (any-non-empty nil))
+        (dolist (arg args)
+          (cond
+           ((typespec-eval--list-elem-type arg)
+            (push (typespec-eval--list-elem-type arg) elems)
+            (when (eq (car arg) 'list+) (setq any-non-empty t)))
+           ((typespec-eval--alist-type-p arg)
+            (push (list 'cons
+                        (typespec-eval--alist-key-type arg)
+                        (typespec-eval--alist-value-type arg))
+                  elems))
+           ((typespec-eval--plist-type-p arg)
+            (push (typespec-eval--simplify-or
+                   (list (typespec-eval--plist-key-type arg)
+                         (typespec-eval--plist-value-type arg)))
+                  elems))
+           ((typespec-eval--const-p arg)
+            (let ((val (typespec-eval--const-value arg)))
+              (when (listp val)
+                (when val (setq any-non-empty t))
+                (push (typespec-eval--simplify-or
+                       (mapcar #'typespec-eval--make-const val))
+                      elems))))))
+        (list (if any-non-empty 'list+ 'list)
+              (if elems
+                  (typespec-eval--simplify-or (nreverse elems))
+                'mixed)))))))
+
 (defun typespec-eval--eval-alist-search (search-item alist search-key-p compare-fn)
   "Evaluate alist search expression.
 SEARCH-ITEM is the key or value to search for.
@@ -3483,6 +3625,12 @@ If LIST-ONLY is non-nil, only handle list types."
      (typespec-eval--eval-string-width arg))
     (`(string-lines ,string . ,rest)
      (typespec-eval--eval-string-lines string (car rest) (cadr rest)))
+    (`(cons ,car ,cdr)
+     (typespec-eval--eval-cons car cdr))
+    (`(append . ,args)
+     (typespec-eval--eval-append args))
+    (`(list . ,args)
+     (typespec-eval--eval-list args))
     (`(string-join ,strings . ,rest)
      (typespec-eval--eval-string-join strings (car rest)))
     (`(abs ,arg)
