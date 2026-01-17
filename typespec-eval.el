@@ -48,6 +48,12 @@
       (typespec-eval--const-value form)
     form))
 
+(defsubst typespec-eval--unconst (form)
+  "Return FORM without a const wrapper when possible."
+  (if (typespec-eval--const-p form)
+      (typespec-eval--const-value form)
+    form))
+
 (defsubst typespec-eval--make-const (value)
   "Return a `(const VALUE)` expression."
   (list 'const value))
@@ -887,6 +893,28 @@ TYPE-PRED is an optional predicate to check evaluated types."
           (typespec-eval--tuple-unconst (cdr args))))
    ((null args) nil)
    (t (typespec-eval--unconst args))))
+
+(defun typespec-eval--tuple-split (args)
+  "Split tuple ARGS into (PREFIX . TAIL), unwrapping consts."
+  (let ((prefix nil)
+        (tail args))
+    (while (consp tail)
+      (push (typespec-eval--unconst (car tail)) prefix)
+      (setq tail (cdr tail)))
+    (cons (nreverse prefix) (typespec-eval--unconst tail))))
+
+(defun typespec-eval--tuple-build (prefix tail)
+  "Return a :tuple expression from PREFIX and TAIL."
+  (let ((body (if tail
+                  (letrec ((build
+                            (lambda (items end)
+                              (if (null items)
+                                  end
+                                (cons (car items)
+                                      (funcall build (cdr items) end))))))
+                    (funcall build prefix tail))
+                prefix)))
+    (cons :tuple body)))
 
 (defun typespec-eval--eval-string-width (arg)
   "Evaluate a `string-width` expression over ARG."
@@ -2149,6 +2177,22 @@ ZERO-VALUE is used when ARGS is empty."
      ((typespec-eval--const-p arg)
       (let ((val (typespec-eval--const-value arg)))
         (typespec-eval--make-const (car-safe val))))
+     ((typespec-eval--alist-type-p arg)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             (list 'cons
+                   (typespec-eval--alist-key-type arg)
+                   (typespec-eval--alist-value-type arg)))))
+     ((typespec-eval--plist-type-p arg)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             (typespec-eval--plist-key-type arg))))
+     ((and (consp arg) (eq (car arg) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr arg)))
+             (prefix (car parts)))
+        (if prefix
+            (car prefix)
+          (typespec-eval--make-const nil))))
      ((eq (car-safe arg) 'list+)
       (cadr arg))
      ((eq (car-safe arg) 'list)
@@ -2163,6 +2207,23 @@ ZERO-VALUE is used when ARGS is empty."
      ((typespec-eval--const-p arg)
       (let ((val (typespec-eval--const-value arg)))
         (typespec-eval--make-const (cdr-safe val))))
+     ((typespec-eval--alist-type-p arg)
+      (typespec-eval--simplify-or (list (typespec-eval--make-const nil) arg)))
+     ((typespec-eval--plist-type-p arg)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             (list 'cons
+                   (typespec-eval--plist-value-type arg)
+                   arg))))
+     ((and (consp arg) (eq (car arg) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr arg)))
+             (prefix (car parts))
+             (tail (cdr parts)))
+        (cond
+         ((null prefix) (typespec-eval--make-const nil))
+         ((and (null (cdr prefix)) (null tail)) (typespec-eval--make-const nil))
+         ((and (null (cdr prefix)) tail) tail)
+         (t (typespec-eval--tuple-build (cdr prefix) tail)))))
      ((memq (car-safe arg) '(list list+))
       (list 'list (cadr arg)))
      (t 'unknown))))
@@ -2179,6 +2240,35 @@ When N is 0, behaves like `car` (including special handling for `list+`)."
         (if (listp val)
             (typespec-eval--make-const (nth nval val))
           'unknown)))
+     ((and (consp list) (eq (car list) :tuple) (integerp nval))
+      (let* ((parts (typespec-eval--tuple-split (cdr list)))
+             (prefix (car parts))
+             (tail (cdr parts)))
+        (cond
+         ((< nval 0) (typespec-eval--make-const nil))
+         ((< nval (length prefix)) (nth nval prefix))
+         ((null tail) (typespec-eval--make-const nil))
+         (t 'unknown))))
+     ((and (typespec-eval--alist-type-p list) (integerp nval))
+      (let ((cell (list 'cons
+                        (typespec-eval--alist-key-type list)
+                        (typespec-eval--alist-value-type list))))
+        (cond
+         ((< nval 0) (typespec-eval--make-const nil))
+         ((= nval 0) cell)
+         (t (typespec-eval--simplify-or
+             (list (typespec-eval--make-const nil) cell))))))
+     ((and (typespec-eval--plist-type-p list) (integerp nval))
+      (let ((key (typespec-eval--plist-key-type list))
+            (value (typespec-eval--plist-value-type list)))
+        (cond
+         ((< nval 0) (typespec-eval--make-const nil))
+         ((= (mod nval 2) 0) key)
+         (t value))))
+     ((typespec-eval--plist-type-p list)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--plist-key-type list)
+             (typespec-eval--plist-value-type list))))
      ((and (integerp nval) (= nval 0) (eq (car-safe list) 'list+))
       ;; For nth 0 on list+, return element type directly (no nil)
       (cadr list))
@@ -2204,6 +2294,22 @@ When N is 1, behaves like `cdr`."
                 'nil
               (typespec-eval--make-const (nthcdr nval val)))
           'unknown)))
+     ((and (typespec-eval--alist-type-p list) (integerp nval))
+      (if (<= nval 0)
+          list
+        list))
+     ((and (typespec-eval--plist-type-p list) (integerp nval))
+      (let ((value (typespec-eval--plist-value-type list)))
+        (if (<= nval 0)
+            list
+          (if (= (mod nval 2) 0)
+              list
+            (list 'cons value list)))))
+     ((typespec-eval--plist-type-p list)
+      (list 'list
+            (typespec-eval--simplify-or
+             (list (typespec-eval--plist-key-type list)
+                   (typespec-eval--plist-value-type list)))))
      ((and (consp list) (eq (car list) :tuple) (integerp nval))
       (let ((tuple (typespec-eval--tuple-unconst (cdr list))))
         (if (<= nval 0)
@@ -2227,6 +2333,15 @@ When N is 1, behaves like `cdr`."
         (condition-case nil
             (typespec-eval--make-const (elt val nval))
           (args-out-of-range 'unknown))))
+     ((and (consp sequence) (eq (car sequence) :tuple) (integerp nval))
+      (let* ((parts (typespec-eval--tuple-split (cdr sequence)))
+             (prefix (car parts))
+             (tail (cdr parts)))
+        (cond
+         ((< nval 0) (typespec-eval--make-const nil))
+         ((< nval (length prefix)) (nth nval prefix))
+         ((null tail) (typespec-eval--make-const nil))
+         (t 'unknown))))
      ((typespec-eval--string-type-p sequence) 'integer)
      ((typespec-eval--list-elem-type sequence) (typespec-eval--list-elem-type sequence))
      ((typespec-eval--vector-of-p sequence 'integer) 'integer)
@@ -2290,7 +2405,23 @@ FN is applied to const values; the type structure is preserved for typed args."
         (if (listp val)
             (typespec-eval--make-const (last val nval))
           'unknown)))
-    ((eq (car-safe list) 'list+)
+     ((and (consp list) (eq (car list) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr list)))
+             (prefix (car parts))
+             (tail (cdr parts))
+             (len (length prefix)))
+        (cond
+         (tail 'unknown)
+         ((null prefix) (typespec-eval--make-const nil))
+         ((null n)
+          (typespec-eval--tuple-build (last prefix 1) nil))
+         ((and (integerp nval) (<= nval 0)) (typespec-eval--make-const nil))
+         ((and (integerp nval) (>= nval len))
+          (typespec-eval--tuple-build prefix nil))
+         ((integerp nval)
+          (typespec-eval--tuple-build (last prefix nval) nil))
+         (t (list 'list (typespec-eval--simplify-or prefix))))))
+     ((eq (car-safe list) 'list+)
       (cond
        ((null n) (list 'list+ (cadr list)))
        ((and (integerp nval) (< nval 0)) (typespec-eval--make-const nil))
@@ -2315,6 +2446,22 @@ FN is applied to const values; the type structure is preserved for typed args."
         (if (listp val)
             (typespec-eval--make-const (butlast val nval))
           'unknown)))
+     ((and (consp list) (eq (car list) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr list)))
+             (prefix (car parts))
+             (tail (cdr parts))
+             (len (length prefix))
+             (count (if n (or nval 1) 1)))
+        (cond
+         (tail 'unknown)
+         ((null prefix) (typespec-eval--make-const nil))
+         ((and (integerp count) (<= count 0))
+          (typespec-eval--tuple-build prefix nil))
+         ((and (integerp count) (>= count len))
+          (typespec-eval--make-const nil))
+         ((integerp count)
+          (typespec-eval--tuple-build (butlast prefix count) nil))
+         (t (list 'list (typespec-eval--simplify-or prefix))))))
      ((eq (car-safe list) 'list+)
       (cond
        ((and (integerp nval) (<= nval 0)) (list 'list+ (cadr list)))
@@ -2431,12 +2578,8 @@ REMOVE is ignored in the type evaluator."
                         (typespec-eval--const-value key)
                         (when default (typespec-eval--const-value default))))
           'unknown)))
-     ((typespec-eval--plist-type-p plist)
-      (let* ((value-type (typespec-eval--plist-value-type plist))
-             (items (list (typespec-eval--make-const nil) value-type)))
-        (when default
-          (setq items (append items (list default))))
-        (typespec-eval--simplify-or items)))
+    ((typespec-eval--plist-type-p plist)
+     'unknown)
      ((typespec-eval--plist-of-p plist)
       (let* ((entry-type (and (typespec-eval--const-p key)
                               (typespec-eval--plist-of-entry-type
@@ -2461,11 +2604,12 @@ REMOVE is ignored in the type evaluator."
             (typespec-eval--make-const
              (plist-member plist-val (typespec-eval--const-value key)))
           'unknown)))
-     ((or (typespec-eval--plist-type-p plist)
-          (typespec-eval--plist-of-p plist))
-      (typespec-eval--simplify-or
-       (list (typespec-eval--make-const nil)
-             '(list+ mixed))))
+    ((typespec-eval--plist-type-p plist)
+     'unknown)
+    ((typespec-eval--plist-of-p plist)
+     (typespec-eval--simplify-or
+      (list (typespec-eval--make-const nil)
+            '(list+ mixed))))
      (t 'unknown))))
 
 (defun typespec-eval--eval-seq-length (sequence)
@@ -2812,6 +2956,13 @@ If LIST-ONLY is non-nil, only handle list types."
     (cond
      ((typespec-eval--const-p arg)
       (typespec-eval--make-const (length (typespec-eval--const-value arg))))
+     ((and (consp arg) (eq (car arg) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr arg)))
+             (prefix (car parts))
+             (tail (cdr parts)))
+        (if (null tail)
+            (typespec-eval--make-const (length prefix))
+          'unknown)))
      ((typespec-eval--non-empty-string-p arg)
       (typespec-eval--integer-range 1 '*))
      ((eq arg 'string)
@@ -3103,6 +3254,8 @@ If LIST-ONLY is non-nil, only handle list types."
     (`(rx . ,_) form)
     (`(:alist ,key ,value)
      (list :alist (typespec-eval--eval key) (typespec-eval--eval value)))
+    (`(:plist ,key ,value)
+     (list :plist (typespec-eval--eval key) (typespec-eval--eval value)))
     (`(:tuple . ,args)
      (cons :tuple (typespec-eval--eval-tuple args)))
     (`(and . ,args)
