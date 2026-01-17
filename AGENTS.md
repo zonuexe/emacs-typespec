@@ -182,6 +182,67 @@ Also considers :guard-defined types via their base type."
 (typespec-eval '(integerp jp-postal-code))  ;; => (const nil)
 ```
 
+### Unified Numeric Range System
+
+The evaluator uses a unified `numeric-range-info` plist structure for efficient numeric range operations:
+
+#### Range Info Structure
+
+```elisp
+;; plist with keys: :type, :low, :high, :low-excl, :high-excl
+;; :type - 'integer or 'float
+;; :low/:high - numeric value or nil (unbounded)
+;; :low-excl/:high-excl - t if boundary is exclusive
+
+(defun typespec-eval--numeric-range-info (form)
+  "Return numeric range info plist for FORM with :type annotation."
+  ...)
+```
+
+#### Range Operations
+
+```elisp
+(defun typespec-eval--numeric-range-shift (info delta)
+  "Return INFO shifted by DELTA."
+  ...)
+
+(defun typespec-eval--numeric-range-abs (info)
+  "Compute absolute value range for INFO."
+  ...)
+
+(defun typespec-eval--numeric-range-signum (info)
+  "Return signum result options as a simplified or-form."
+  ...)
+
+(defun typespec-eval--numeric-range-unary (info fn)
+  "Apply unary FN to numeric range INFO."
+  ...)
+```
+
+#### Range to Form Conversion
+
+```elisp
+(defun typespec-eval--numeric-range-to-form (info)
+  "Convert numeric range INFO back to a typespec form.
+Returns simple type symbol for fully unbounded ranges.
+Alias types are normalized to canonical range forms."
+  ...)
+```
+
+**Normalization Policy:**
+
+Alias type symbols are treated as **input aliases** and normalized to canonical range forms:
+- `positive-int` → `(integer 1 *)`
+- `non-negative-int` → `(integer 0 *)`
+- `negative-int` → `(integer * -1)`
+- `non-positive-int` → `(integer * 0)`
+
+**Benefits:**
+- Single unified representation for integer and float ranges
+- Type-preserving operations (integer stays integer, float stays float)
+- Simplified internal processing (no special-case branches)
+- Consistent handling of exclusive boundaries
+
 ### Generic Helper Functions
 
 The evaluator uses generic helpers to reduce code duplication:
