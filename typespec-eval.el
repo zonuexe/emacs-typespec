@@ -48,11 +48,9 @@
       (typespec-eval--const-value form)
     form))
 
-(defsubst typespec-eval--unconst (form)
-  "Return FORM without a const wrapper when possible."
-  (if (typespec-eval--const-p form)
-      (typespec-eval--const-value form)
-    form))
+(defsubst typespec-eval--type-eq-p (sym)
+  "Return a predicate that check if FORM equals SYM."
+  (lambda (form) (eq form sym)))
 
 (defsubst typespec-eval--make-const (value)
   "Return a `(const VALUE)` expression."
@@ -89,23 +87,56 @@
   "Return an integer range type expression for LOW and HIGH."
   (list 'integer low high))
 
-(defsubst typespec-eval--integer-range-p (form)
-  "Return non-nil if FORM is an `(integer LOW HIGH)` range."
+(defsubst typespec-eval--range-p (form type-sym)
+  "Return non-nil if FORM is a `(TYPE-SYM LOW HIGH)` range."
   (and (consp form)
-       (eq (car form) 'integer)
+       (eq (car form) type-sym)
        (consp (cdr form))
        (consp (cddr form))))
+
+(defsubst typespec-eval--integer-range-p (form)
+  "Return non-nil if FORM is an `(integer LOW HIGH)` range."
+  (typespec-eval--range-p form 'integer))
 
 (defsubst typespec-eval--float-range (low high)
   "Return a float range type expression for LOW and HIGH."
   (list 'float low high))
 
+(defsubst typespec-eval--number-range-bound (bound)
+  "Normalize numeric range BOUND to a number or `*`."
+  (cond
+   ((eq bound '*) '*)
+   ((numberp bound) bound)
+   ((and (consp bound) (numberp (car bound))) (list (car bound)))
+   (t nil)))
+
+(defsubst typespec-eval--number-range (low high)
+  "Return a number range type expression for LOW and HIGH."
+  (let ((low (typespec-eval--number-range-bound low))
+        (high (typespec-eval--number-range-bound high)))
+    (if (and low high)
+        (list 'number low high)
+      'number)))
+
+(defsubst typespec-eval--real-range (low high)
+  "Return a real range type expression for LOW and HIGH."
+  (let ((low (typespec-eval--number-range-bound low))
+        (high (typespec-eval--number-range-bound high)))
+    (if (and low high)
+        (list 'real low high)
+      'real)))
+
 (defsubst typespec-eval--float-range-p (form)
   "Return non-nil if FORM is a `(float LOW HIGH)` range."
-  (and (consp form)
-       (eq (car form) 'float)
-       (consp (cdr form))
-       (consp (cddr form))))
+  (typespec-eval--range-p form 'float))
+
+(defsubst typespec-eval--number-range-p (form)
+  "Return non-nil if FORM is a `(number LOW HIGH)` range."
+  (typespec-eval--range-p form 'number))
+
+(defsubst typespec-eval--real-range-p (form)
+  "Return non-nil if FORM is a `(real LOW HIGH)` range."
+  (typespec-eval--range-p form 'real))
 
 (defsubst typespec-eval--integer-type-p (form)
   "Return non-nil if FORM is an integer-like type."
@@ -128,7 +159,9 @@
                           positive-float negative-float
                           non-positive-float non-negative-float))
       (typespec-eval--integer-range-p form)
-      (typespec-eval--float-range-p form)))
+      (typespec-eval--float-range-p form)
+      (typespec-eval--number-range-p form)
+      (typespec-eval--real-range-p form)))
 
 (defsubst typespec-eval--number-or-const-p (form)
   "Return non-nil if FORM is a number type or numeric const."
@@ -220,7 +253,10 @@ Note: `number' type returns \\='number, not \\='integer or \\='float."
    ((typespec-eval--integer-type-p form) 'integer)
    ((typespec-eval--float-type-p form) 'float)
    ;; number/real are supertypes of integer and float
-   ((memq form '(number real)) 'number)
+   ((or (memq form '(number real))
+        (typespec-eval--number-range-p form)
+        (typespec-eval--real-range-p form))
+    'number)
    ((typespec-eval--list-type-p form) 'list)
    ((typespec-eval--vector-type-p form) 'vector)
    ((typespec-eval--symbol-type-p form) 'symbol)
@@ -876,6 +912,14 @@ TYPE-PRED is an optional predicate to check evaluated types."
                   (typespec-eval--simplify-or (nreverse vals))))))))
    (t nil)))
 
+(defsubst typespec-eval--plist-key-type (value)
+  "Return the key type of a plist type VALUE."
+  (cadr value))
+
+(defsubst typespec-eval--plist-value-type (value)
+  "Return the value type of a plist type VALUE."
+  (caddr value))
+
 (defun typespec-eval--plist-append-entry-types (arg)
   "Return (KEY . VALUE) if ARG can contribute to a plist append."
   (cond
@@ -933,7 +977,7 @@ TYPE-PRED is an optional predicate to check evaluated types."
               (typespec-eval--make-const (cdr val))))))
    (t nil)))
 
-(defsubst typespec-eval--plist-type-p (value)
+(defun typespec-eval--plist-type-p (value)
   "Return non-nil if VALUE is a plist type."
   (and (consp value)
        (eq (car value) :plist)
@@ -941,33 +985,42 @@ TYPE-PRED is an optional predicate to check evaluated types."
        (consp (cddr value))
        (null (cdddr value))))
 
-(defsubst typespec-eval--plist-key-type (value)
-  "Return the key type of a plist type VALUE."
-  (cadr value))
-
-(defsubst typespec-eval--plist-value-type (value)
-  "Return the value type of a plist type VALUE."
-  (caddr value))
-
 (defsubst typespec-eval--plist-of-p (value)
   "Return non-nil if VALUE is a plist-of type."
   (and (consp value)
        (eq (car value) :plist-of)))
 
-(defun typespec-eval--plist-of-entries (value)
+(defsubst typespec-eval--plist-of-entries (value)
   "Return entries for a plist-of type VALUE."
   (cdr value))
+
+(defsubst typespec-eval--plist-of-entry-key (entry)
+  "Return the key for plist-of ENTRY."
+  (pcase entry
+    (`(:? ,key ,_) key)
+    (`(,key ,_) key)
+    (_ nil)))
+
+(defsubst typespec-eval--plist-of-entry-value (entry)
+  "Return the value type for plist-of ENTRY."
+  (pcase entry
+    (`(:? ,_ ,value) value)
+    (`(,_ ,value) value)
+    (_ nil)))
 
 (defun typespec-eval--plist-of-value-type (value)
   "Return combined value type for plist-of VALUE."
   (typespec-eval--simplify-or
-   (mapcar (lambda (entry) (cadr entry))
-           (typespec-eval--plist-of-entries value))))
+   (delq nil (mapcar #'typespec-eval--plist-of-entry-value
+                     (typespec-eval--plist-of-entries value)))))
 
 (defun typespec-eval--plist-of-entry-type (plist key)
   "Return entry type in PLIST for KEY, or nil if not found."
-  (let ((entry (assoc key (typespec-eval--plist-of-entries plist))))
-    (and entry (cadr entry))))
+  (let ((entry (seq-find
+                (lambda (item)
+                  (equal key (typespec-eval--plist-of-entry-key item)))
+                (typespec-eval--plist-of-entries plist))))
+    (and entry (typespec-eval--plist-of-entry-value entry))))
 
 (defun typespec-eval--eval-tuple (args)
   "Evaluate tuple ARGS in order, preserving dotted structure."
@@ -996,6 +1049,17 @@ TYPE-PRED is an optional predicate to check evaluated types."
       (setq tail (cdr tail)))
     (cons (nreverse prefix) (typespec-eval--unconst tail))))
 
+(defun typespec-eval--tuple-elements (args)
+  "Return tuple elements from ARGS as a flat list."
+  (let ((items nil)
+        (tail args))
+    (while (consp tail)
+      (push (car tail) items)
+      (setq tail (cdr tail)))
+    (when tail
+      (push tail items))
+    (nreverse items)))
+
 (defun typespec-eval--tuple-build (prefix tail)
   "Return a :tuple expression from PREFIX and TAIL."
   (let ((body (if tail
@@ -1008,6 +1072,121 @@ TYPE-PRED is an optional predicate to check evaluated types."
                     (funcall build prefix tail))
                 prefix)))
     (cons :tuple body)))
+
+(defun typespec-eval--eval-argspecs (argspecs)
+  "Evaluate ARGSPECS in order, preserving markers like &rest."
+  (mapcar
+   (lambda (spec)
+     (if (and (symbolp spec)
+              (memq spec '(&optional &rest &keys)))
+         spec
+       (typespec-eval--eval spec)))
+   argspecs))
+
+(defun typespec-eval--eval-function-type (argspecs ret)
+  "Evaluate function type ARGSPECS and RET."
+  (let ((argspecs (typespec-eval--eval-argspecs argspecs)))
+    (pcase ret
+      (`(:guard ,type)
+       (list 'function argspecs (list :guard (typespec-eval--eval type))))
+      (`(:guard! ,type)
+       (list 'function argspecs (list :guard! (typespec-eval--eval type))))
+      (`(:assert ,type)
+       (list 'function argspecs (list :assert (typespec-eval--eval type))))
+      (_
+       (list 'function argspecs (typespec-eval--eval ret))))))
+
+(defun typespec-eval--eval-diff (lhs rhs)
+  "Evaluate `(diff LHS RHS)` with simple simplifications."
+  (let ((lhs (typespec-eval--eval lhs))
+        (rhs (typespec-eval--eval rhs)))
+    (cond
+     ((eq lhs 'never) 'never)
+     ((eq rhs 'never) lhs)
+     ((equal lhs rhs) 'never)
+     (t (list 'diff lhs rhs)))))
+
+(defun typespec-eval--eval-generalize (value target)
+  "Evaluate `(generalize VALUE TARGET)`."
+  (let ((value (typespec-eval--eval value))
+        (target (typespec-eval--eval target)))
+    (if (typespec-eval--const-p value)
+        target
+      (list 'generalize value target))))
+
+(defun typespec-eval--eval-generalize-signed (value)
+  "Evaluate `(generalize-signed VALUE)`."
+  (let ((value (typespec-eval--eval value)))
+    (cond
+     ((typespec-eval--const-p value)
+      (let ((val (typespec-eval--const-value value)))
+        (cond
+         ((and (integerp val) (> val 0)) 'positive-int)
+         ((and (integerp val) (< val 0)) 'negative-int)
+         ((and (floatp val) (> val 0.0)) 'positive-float)
+         ((and (floatp val) (< val 0.0)) 'negative-float)
+         (t value))))
+     ((memq value '(unknown mixed)) 'never)
+     (t 'never))))
+
+(defun typespec-eval--eval-downcast (_value target)
+  "Evaluate `(downcast VALUE TARGET)` as TARGET."
+  (typespec-eval--eval target))
+
+(defun typespec-eval--eval-value-of (arg)
+  "Evaluate `(value-of ARG)`."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((and (consp arg) (eq (car arg) :tuple))
+      (typespec-eval--simplify-or
+       (typespec-eval--tuple-elements (cdr arg))))
+     ((and (consp arg) (memq (car arg) '(list list+)))
+      (cadr arg))
+     ((typespec-eval--const-p arg)
+      (let ((val (typespec-eval--const-value arg)))
+        (if (listp val)
+            (typespec-eval--simplify-or
+             (mapcar #'typespec-eval--make-const val))
+          'unknown)))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-plist-of (entries)
+  "Evaluate a plist-of ENTRIES list."
+  (cons :plist-of
+        (mapcar
+         (lambda (entry)
+           (pcase entry
+             (`(:? ,key ,type)
+              (list :? key (typespec-eval--eval type)))
+             (`(,key ,type)
+              (list key (typespec-eval--eval type)))
+             (_ entry)))
+         entries)))
+
+(defun typespec-eval--eval-plist-key-of (plist)
+  "Evaluate `(plist-key-of PLIST)`."
+  (let ((plist (typespec-eval--eval plist)))
+    (cond
+     ((typespec-eval--plist-type-p plist)
+      (typespec-eval--plist-key-type plist))
+     ((typespec-eval--plist-of-p plist)
+      (typespec-eval--simplify-or
+       (mapcar (lambda (key)
+                 (typespec-eval--make-const key))
+               (delq nil
+                     (mapcar #'typespec-eval--plist-of-entry-key
+                             (typespec-eval--plist-of-entries plist))))))
+     (t 'unknown))))
+
+(defun typespec-eval--eval-plist-value-of (plist)
+  "Evaluate `(plist-value-of PLIST)`."
+  (let ((plist (typespec-eval--eval plist)))
+    (cond
+     ((typespec-eval--plist-type-p plist)
+      (typespec-eval--plist-value-type plist))
+     ((typespec-eval--plist-of-p plist)
+      (typespec-eval--plist-of-value-type plist))
+     (t 'unknown))))
 
 (defun typespec-eval--eval-string-width (arg)
   "Evaluate a `string-width` expression over ARG."
@@ -1559,7 +1738,7 @@ Alias types are normalized to canonical range forms."
              (> high 0)
              (and (= high 0) high-excl)))))
 
-(defsubst typespec-eval--numeric-range-negative-p (info)
+(defun typespec-eval--numeric-range-negative-p (info)
   "Return non-nil if INFO describes a negative range."
   (let ((low (plist-get info :low))
         (high (plist-get info :high))
@@ -1571,7 +1750,7 @@ Alias types are normalized to canonical range forms."
              (< low 0)
              (and (= low 0) low-excl)))))
 
-(defsubst typespec-eval--numeric-range-includes-zero-p (info)
+(defun typespec-eval--numeric-range-includes-zero-p (info)
   "Return non-nil if INFO includes zero."
   (let ((low (plist-get info :low))
         (high (plist-get info :high))
@@ -3565,21 +3744,49 @@ If LIST-ONLY is non-nil, only handle list types."
      (typespec-eval--literal-const form))
     (`(or . ,args)
      (typespec-eval--simplify-or (mapcar #'typespec-eval--eval args)))
+    (`(diff ,lhs ,rhs)
+     (typespec-eval--eval-diff lhs rhs))
     (`(list+ ,type)
      (list 'list+ (typespec-eval--eval type)))
     (`(list ,type)
      (list 'list (typespec-eval--eval type)))
     (`(vector ,type)
      (list 'vector (typespec-eval--eval type)))
+    (`(sequence ,type)
+     (list 'sequence (typespec-eval--eval type)))
+    (`(hash-table ,key ,value)
+     (list 'hash-table (typespec-eval--eval key) (typespec-eval--eval value)))
+    (`(:class ,class)
+     (list :class class))
     (`(:forall ,_ ,body)
      (typespec-eval--eval body))
+    (`(function ,argspecs ,ret)
+     (typespec-eval--eval-function-type argspecs ret))
+    (`(generalize ,value ,target)
+     (typespec-eval--eval-generalize value target))
+    (`(generalize-signed ,value)
+     (typespec-eval--eval-generalize-signed value))
+    (`(downcast ,value ,target)
+     (typespec-eval--eval-downcast value target))
+    (`(benevolent ,value)
+     (list 'benevolent (typespec-eval--eval value)))
     (`(rx . ,_) form)
     (`(:alist ,key ,value)
      (list :alist (typespec-eval--eval key) (typespec-eval--eval value)))
     (`(:plist ,key ,value)
      (list :plist (typespec-eval--eval key) (typespec-eval--eval value)))
+    (`(:plist-of . ,entries)
+     (typespec-eval--eval-plist-of entries))
     (`(:tuple . ,args)
      (cons :tuple (typespec-eval--eval-tuple args)))
+    (`(value-of ,arg)
+     (typespec-eval--eval-value-of arg))
+    (`(var ,sym)
+     (list 'var sym))
+    (`(plist-key-of ,plist)
+     (typespec-eval--eval-plist-key-of plist))
+    (`(plist-value-of ,plist)
+     (typespec-eval--eval-plist-value-of plist))
     (`(and . ,args)
      (typespec-eval--eval-and args))
     (`(not ,arg)
@@ -3595,6 +3802,10 @@ If LIST-ONLY is non-nil, only handle list types."
      (typespec-eval--integer-range low high))
     (`(float ,low ,high)
      (typespec-eval--float-range low high))
+    (`(real ,low ,high)
+     (typespec-eval--real-range low high))
+    (`(number ,low ,high)
+     (typespec-eval--number-range low high))
     ('positive-float
      (typespec-eval--float-range '(0) '*))
     ('negative-float
@@ -3653,10 +3864,10 @@ If LIST-ONLY is non-nil, only handle list types."
                        #'typespec-eval--non-negative-int-type-p))
     (`(fixnump ,arg)
      (typespec-eval--eval-predicate arg #'fixnump
-                       (lambda (form) (eq form 'fixnum))))
+                       (typespec-eval--type-eq-p 'fixnum)))
     (`(bignump ,arg)
      (typespec-eval--eval-predicate arg #'bignump
-                       (lambda (form) (eq form 'bignum))))
+                       (typespec-eval--type-eq-p 'bignum)))
     (`(booleanp ,arg)
      (typespec-eval--eval-predicate arg #'booleanp
                        #'typespec-eval--boolean-type-p))
@@ -3727,10 +3938,10 @@ If LIST-ONLY is non-nil, only handle list types."
                              (typespec-eval--char-table-type-p form)))))
     (`(bare-symbol-p ,arg)
      (typespec-eval--eval-predicate arg #'bare-symbol-p
-                       (lambda (form) (eq form 'symbol))))
+                       (typespec-eval--type-eq-p 'symbol)))
     (`(symbol-with-pos-p ,arg)
      (typespec-eval--eval-predicate arg #'symbol-with-pos-p
-                       (lambda (form) (eq form 'symbol-with-pos))))
+                       (typespec-eval--type-eq-p 'symbol-with-pos)))
     (`(integer-or-marker-p ,arg)
      (typespec-eval--eval-predicate arg #'integer-or-marker-p
                        (lambda (form)
