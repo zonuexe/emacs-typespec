@@ -347,6 +347,14 @@ Considers :guard-defined types via their base type."
 
 (defun typespec-eval--simplify-or (items)
   "Return a simplified `(or ...)` form for ITEMS."
+  (let ((flat nil))
+    (dolist (item items)
+      (setq flat
+            (append flat
+                    (if (and (consp item) (eq (car item) 'or))
+                        (cdr item)
+                      (list item)))))
+    (setq items (seq-uniq flat #'equal)))
   (cond
    ((null items) 'never)
    ((null (cdr items)) (car items))
@@ -839,6 +847,56 @@ TYPE-PRED is an optional predicate to check evaluated types."
 (defsubst typespec-eval--alist-value-type (value)
   "Return the value type of an alist type VALUE."
   (caddr value))
+
+(defun typespec-eval--alist-entry-seq-types (form)
+  "Return (KEY . VALUE) if FORM is a sequence of alist entries."
+  (cond
+   ((typespec-eval--alist-type-p form)
+    (cons (typespec-eval--alist-key-type form)
+          (typespec-eval--alist-value-type form)))
+   ((typespec-eval--list-elem-type form)
+    (typespec-eval--alist-entry-types
+     (typespec-eval--list-elem-type form)))
+   ((and (consp form) (eq (car form) :tuple))
+    (let* ((parts (typespec-eval--tuple-split (cdr form)))
+           (prefix (car parts))
+           (tail (cdr parts))
+           (entries (mapcar #'typespec-eval--alist-entry-types prefix)))
+      (when (seq-every-p #'identity entries)
+        (let ((keys (mapcar #'car entries))
+              (vals (mapcar #'cdr entries)))
+          (when (typespec-eval--list-elem-type tail)
+            (let ((tail-entry (typespec-eval--alist-entry-types
+                               (typespec-eval--list-elem-type tail))))
+              (when tail-entry
+                (push (car tail-entry) keys)
+                (push (cdr tail-entry) vals))))
+          (when keys
+            (cons (typespec-eval--simplify-or (nreverse keys))
+                  (typespec-eval--simplify-or (nreverse vals))))))))
+   (t nil)))
+
+(defun typespec-eval--plist-append-entry-types (arg)
+  "Return (KEY . VALUE) if ARG can contribute to a plist append."
+  (cond
+   ((typespec-eval--plist-type-p arg)
+    (cons (typespec-eval--plist-key-type arg)
+          (typespec-eval--plist-value-type arg)))
+   ((typespec-eval--const-p arg)
+    (let* ((val (typespec-eval--const-value arg))
+           (len (and (listp val) (length val))))
+      (when (and len (zerop (mod len 2)))
+        (let ((keys nil)
+              (values nil)
+              (idx 0))
+          (dolist (item val)
+            (if (cl-evenp idx)
+                (push (typespec-eval--make-const item) keys)
+              (push (typespec-eval--make-const item) values))
+            (setq idx (1+ idx)))
+          (cons (typespec-eval--simplify-or (nreverse keys))
+                (typespec-eval--simplify-or (nreverse values)))))))
+   (t nil)))
 
 (defsubst typespec-eval--cons-type-p (form)
   "Return non-nil if FORM is a cons cell type."
@@ -2283,7 +2341,25 @@ When N is 0, behaves like `car` (including special handling for `list+`)."
          ((< nval 0) (typespec-eval--make-const nil))
          ((< nval (length prefix)) (nth nval prefix))
          ((null tail) (typespec-eval--make-const nil))
+         ((typespec-eval--list-elem-type tail)
+          (let ((offset (- nval (length prefix)))
+                (elem (typespec-eval--list-elem-type tail)))
+            (if (eq (car-safe tail) 'list+)
+                (if (>= offset 0) elem (typespec-eval--make-const nil))
+              (if (>= offset 0)
+                  (typespec-eval--simplify-or
+                   (list (typespec-eval--make-const nil) elem))
+                (typespec-eval--make-const nil)))))
          (t 'unknown))))
+     ((and (consp list) (eq (car list) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr list)))
+             (prefix (car parts))
+             (tail (cdr parts))
+             (items (append prefix
+                            (when (typespec-eval--list-elem-type tail)
+                              (list (typespec-eval--list-elem-type tail)))
+                            (list (typespec-eval--make-const nil)))))
+        (typespec-eval--simplify-or items)))
      ((and (typespec-eval--alist-type-p list) (integerp nval))
       (let ((cell (list 'cons
                         (typespec-eval--alist-key-type list)
@@ -2353,6 +2429,14 @@ When N is 1, behaves like `cdr`."
             (if (listp tail)
                 (cons :tuple tail)
               (typespec-eval--eval (cdr list)))))))
+    ((and (consp list) (eq (car list) :tuple))
+     (let* ((parts (typespec-eval--tuple-split (cdr list)))
+            (prefix (car parts))
+            (tail (cdr parts))
+            (elem-types (append prefix
+                                (when (typespec-eval--list-elem-type tail)
+                                  (list (typespec-eval--list-elem-type tail))))))
+       (list 'list (typespec-eval--simplify-or elem-types))))
      ((typespec-eval--list-elem-type list)
       (list 'list (typespec-eval--list-elem-type list)))
      (t 'unknown))))
@@ -2376,7 +2460,19 @@ When N is 1, behaves like `cdr`."
          ((< nval 0) (typespec-eval--make-const nil))
          ((< nval (length prefix)) (nth nval prefix))
          ((null tail) (typespec-eval--make-const nil))
+         ((typespec-eval--list-elem-type tail)
+          (let ((offset (- nval (length prefix)))
+                (elem (typespec-eval--list-elem-type tail)))
+            (if (>= offset 0) elem (typespec-eval--make-const nil))))
          (t 'unknown))))
+     ((and (consp sequence) (eq (car sequence) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr sequence)))
+             (prefix (car parts))
+             (tail (cdr parts))
+             (items (append prefix
+                            (when (typespec-eval--list-elem-type tail)
+                              (list (typespec-eval--list-elem-type tail))))))
+        (typespec-eval--simplify-or items)))
      ((typespec-eval--string-type-p sequence) 'integer)
      ((typespec-eval--list-elem-type sequence) (typespec-eval--list-elem-type sequence))
      ((typespec-eval--vector-of-p sequence 'integer) 'integer)
@@ -2423,6 +2519,10 @@ FN is applied to const values; the type structure is preserved for typed args."
     (cond
      ((typespec-eval--const-p list)
       (typespec-eval--make-const (safe-length (typespec-eval--const-value list))))
+     ((typespec-eval--alist-type-p list)
+      (typespec-eval--integer-range 0 '*))
+     ((typespec-eval--plist-type-p list)
+      (typespec-eval--integer-range 0 '*))
      ((eq (car-safe list) 'list+)
       (typespec-eval--integer-range 1 '*))
      ((eq (car-safe list) 'list)
@@ -2456,6 +2556,14 @@ FN is applied to const values; the type structure is preserved for typed args."
          ((integerp nval)
           (typespec-eval--tuple-build (last prefix nval) nil))
          (t (list 'list (typespec-eval--simplify-or prefix))))))
+     ((typespec-eval--alist-type-p list)
+      (cond
+       ((and (integerp nval) (<= nval 0)) (typespec-eval--make-const nil))
+       (t list)))
+     ((typespec-eval--plist-type-p list)
+      (cond
+       ((and (integerp nval) (<= nval 0)) (typespec-eval--make-const nil))
+       (t list)))
      ((eq (car-safe list) 'list+)
       (cond
        ((null n) (list 'list+ (cadr list)))
@@ -2497,6 +2605,14 @@ FN is applied to const values; the type structure is preserved for typed args."
          ((integerp count)
           (typespec-eval--tuple-build (butlast prefix count) nil))
          (t (list 'list (typespec-eval--simplify-or prefix))))))
+     ((typespec-eval--alist-type-p list)
+      (cond
+       ((and (integerp nval) (<= nval 0)) list)
+       (t list)))
+     ((typespec-eval--plist-type-p list)
+      (cond
+       ((and (integerp nval) (<= nval 0)) list)
+       (t list)))
      ((eq (car-safe list) 'list+)
       (cond
        ((and (integerp nval) (<= nval 0)) (list 'list+ (cadr list)))
@@ -2520,17 +2636,25 @@ FN is applied to const values; the type structure is preserved for typed args."
        (cons (typespec-eval--const-value car)
              (typespec-eval--const-value cdr))))
      ((typespec-eval--list-elem-type cdr)
-      (list 'list+
-            (typespec-eval--simplify-or
-             (list car (typespec-eval--list-elem-type cdr)))))
+      (let ((elem (typespec-eval--list-elem-type cdr)))
+        (list 'list+
+              (if (equal car elem)
+                  elem
+                (typespec-eval--simplify-or (list car elem))))))
      ((typespec-eval--always-nil-p cdr)
       (list 'list+ car))
      ((and (typespec-eval--alist-type-p cdr) entry)
       (list :alist
-            (typespec-eval--simplify-or
-             (list (car entry) (typespec-eval--alist-key-type cdr)))
-            (typespec-eval--simplify-or
-             (list (cdr entry) (typespec-eval--alist-value-type cdr)))))
+            (let ((key (car entry))
+                  (prev (typespec-eval--alist-key-type cdr)))
+              (if (equal key prev)
+                  key
+                (typespec-eval--simplify-or (list key prev))))
+            (let ((val (cdr entry))
+                  (prev (typespec-eval--alist-value-type cdr)))
+              (if (equal val prev)
+                  val
+                (typespec-eval--simplify-or (list val prev))))))
      (t (list 'cons car cdr)))))
 
 (defun typespec-eval--eval-list (args)
@@ -2586,6 +2710,29 @@ FN is applied to const values; the type structure is preserved for typed args."
              (mapcar #'typespec-eval--plist-key-type args))
             (typespec-eval--simplify-or
              (mapcar #'typespec-eval--plist-value-type args))))
+     ((let* ((entries (mapcar #'typespec-eval--plist-append-entry-types args))
+             (all-entries (and (seq-every-p #'identity entries) entries)))
+        (when all-entries
+          (list :plist
+                (typespec-eval--simplify-or (mapcar #'car entries))
+                (typespec-eval--simplify-or (mapcar #'cdr entries))))))
+     ((let* ((entries
+              (mapcar
+               (lambda (arg)
+                 (cond
+                  ((typespec-eval--alist-type-p arg)
+                   (cons (typespec-eval--alist-key-type arg)
+                         (typespec-eval--alist-value-type arg)))
+                  ((typespec-eval--list-elem-type arg)
+                   (typespec-eval--alist-entry-types
+                    (typespec-eval--list-elem-type arg)))
+                  (t nil)))
+               args))
+             (all-entries (and (seq-every-p #'identity entries) entries)))
+        (when all-entries
+          (list :alist
+                (typespec-eval--simplify-or (mapcar #'car entries))
+                (typespec-eval--simplify-or (mapcar #'cdr entries))))))
      (t
       (let* ((elems nil)
              (any-non-empty nil))
@@ -2643,6 +2790,11 @@ COMPARE-FN is the comparison function (#\\='eq or #\\='equal)."
        (list (typespec-eval--make-const nil)
              (cons :tuple (cons (typespec-eval--alist-key-type alist)
                                 (typespec-eval--alist-value-type alist))))))
+     ((let ((entry (typespec-eval--alist-entry-seq-types alist)))
+        (when entry
+          (typespec-eval--simplify-or
+           (list (typespec-eval--make-const nil)
+                 (cons :tuple (cons (car entry) (cdr entry))))))))
      (t 'unknown))))
 
 
@@ -2671,6 +2823,13 @@ COMPARE-FN is the comparison function (#\\='eq or #\\='equal)."
             (typespec-eval--simplify-or (list default value-type))
           (typespec-eval--simplify-or
            (list (typespec-eval--make-const nil) value-type)))))
+     ((let ((entry (typespec-eval--alist-entry-seq-types alist)))
+        (when entry
+          (let ((value-type (cdr entry)))
+            (if default
+                (typespec-eval--simplify-or (list default value-type))
+              (typespec-eval--simplify-or
+               (list (typespec-eval--make-const nil) value-type)))))))
      (t 'unknown))))
 
 (defun typespec-eval--eval-alist-get (key alist &optional default remove testfn)
@@ -2701,6 +2860,13 @@ REMOVE is ignored in the type evaluator."
             (typespec-eval--simplify-or (list default value-type))
           (typespec-eval--simplify-or
            (list (typespec-eval--make-const nil) value-type)))))
+     ((let ((entry (typespec-eval--alist-entry-seq-types alist)))
+        (when entry
+          (let ((value-type (cdr entry)))
+            (if default
+                (typespec-eval--simplify-or (list default value-type))
+              (typespec-eval--simplify-or
+               (list (typespec-eval--make-const nil) value-type)))))))
      (t 'unknown))))
 
 
@@ -3008,6 +3174,16 @@ If LIST-ONLY is non-nil, only handle list types."
       (typespec-eval--simplify-or
        (list (typespec-eval--make-const nil)
              (list 'list (typespec-eval--list-elem-type list)))))
+     ((and (consp list) (eq (car list) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr list)))
+             (prefix (car parts))
+             (tail (cdr parts))
+             (elem-types (append prefix
+                                 (when (typespec-eval--list-elem-type tail)
+                                   (list (typespec-eval--list-elem-type tail))))))
+        (typespec-eval--simplify-or
+         (list (typespec-eval--make-const nil)
+               (list 'list (typespec-eval--simplify-or elem-types))))))
      (t 'unknown))))
 
 (defun typespec-eval--eval-copy-tree (tree &optional vectors-and-records)
@@ -3105,6 +3281,10 @@ If LIST-ONLY is non-nil, only handle list types."
         (if (null tail)
             (typespec-eval--make-const (length prefix))
           'unknown)))
+     ((typespec-eval--alist-type-p arg)
+      (typespec-eval--integer-range 0 '*))
+     ((typespec-eval--plist-type-p arg)
+      (typespec-eval--integer-range 0 '*))
      ((typespec-eval--non-empty-string-p arg)
       (typespec-eval--integer-range 1 '*))
      ((eq arg 'string)
