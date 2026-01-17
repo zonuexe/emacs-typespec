@@ -1372,7 +1372,7 @@ The plist contains :type (integer or float), :low, :high, :low-excl, :high-excl.
   "Convert numeric range INFO back to a typespec form.
 INFO must have :type, :low, :high, :low-excl, :high-excl.
 Returns simple type symbol for fully unbounded ranges.
-Alias types like `positive-int` are normalized to range forms like `(integer 1 *)`."
+Alias types are normalized to canonical range forms."
   (let ((type (plist-get info :type))
         (low (plist-get info :low))
         (high (plist-get info :high))
@@ -1401,7 +1401,7 @@ Alias types like `positive-int` are normalized to range forms like `(integer 1 *
                       (t (float high)))))
         (typespec-eval--float-range lo hi))))))
 
-(defsubst typespec-eval--numeric-range-singleton-p (info)
+(defun typespec-eval--numeric-range-singleton-p (info)
   "Return non-nil if INFO describes a single numeric value."
   (let ((low (plist-get info :low))
         (high (plist-get info :high)))
@@ -1470,9 +1470,7 @@ For float ranges, exclusivity is cleared when shifting since the exact
 boundary value changes."
   (let ((type (plist-get info :type))
         (low (plist-get info :low))
-        (high (plist-get info :high))
-        (low-excl (plist-get info :low-excl))
-        (high-excl (plist-get info :high-excl)))
+        (high (plist-get info :high)))
     ;; For floats, shifting clears exclusivity (conservative approach)
     ;; For integers, exclusivity can be preserved in concept but we clear it
     ;; since the shifted value is different
@@ -1565,7 +1563,7 @@ Returns a new info plist for shift operations, or a result form for signum/abs."
     (typespec-eval--numeric-range-signum info))
    (t nil)))
 
-(defsubst typespec-eval--numeric-range-disjoint-p (lhs rhs)
+(defun typespec-eval--numeric-range-disjoint-p (lhs rhs)
   "Return non-nil if numeric ranges LHS and RHS are disjoint."
   (let ((lhigh (plist-get lhs :high))
         (lhigh-excl (plist-get lhs :high-excl))
@@ -1582,7 +1580,7 @@ Returns a new info plist for shift operations, or a result form for signum/abs."
              (or (< rhigh llow)
                  (and (= rhigh llow) (or rhigh-excl llow-excl)))))))
 
-(defsubst typespec-eval--numeric-range-compare (lhs rhs pred)
+(defun typespec-eval--numeric-range-compare (lhs rhs pred)
   "Return t/nil if PRED is decidable for LHS and RHS, else `unknown`."
   (let ((llow (plist-get lhs :low))
         (llow-excl (plist-get lhs :low-excl))
@@ -1676,64 +1674,7 @@ Returns a new info plist for shift operations, or a result form for signum/abs."
            (typespec-eval--float-bound max-abs max-excl))))))
      (t nil))))
 
-(defsubst typespec-eval--float-range-unary (range fn)
-  "Return a float range from RANGE after applying unary FN."
-  (let ((low (cadr range))
-        (high (caddr range)))
-    (cond
-     ((eq fn #'1+)
-      (typespec-eval--float-range
-       (typespec-eval--float-bound-shift low 1.0)
-       (typespec-eval--float-bound-shift high 1.0)))
-     ((eq fn #'1-)
-      (typespec-eval--float-range
-       (typespec-eval--float-bound-shift low -1.0)
-       (typespec-eval--float-bound-shift high -1.0)))
-     ((eq fn #'abs)
-      (typespec-eval--float-range-abs range))
-     (t nil))))
-
-(defsubst typespec-eval--integer-range-unary (range fn)
-  "Return an integer range from RANGE after applying unary FN."
-  (let* ((low (typespec-eval--integer-bound-min (cadr range)))
-         (high (typespec-eval--integer-bound-max (caddr range))))
-    (cond
-     ((and (eq fn #'cl-signum)
-           (numberp low)
-           (numberp high))
-      (let ((opts nil))
-        (cond
-         ((> low 0) (setq opts '(1)))
-         ((< high 0) (setq opts '(-1)))
-         ((and (= low 0) (= high 0)) (setq opts '(0)))
-         ((= low 0) (setq opts '(0 1)))
-         ((= high 0) (setq opts '(-1 0)))
-         (t (setq opts '(-1 0 1))))
-        (typespec-eval--simplify-or
-         (mapcar #'typespec-eval--make-const opts))))
-     ((and (eq fn #'abs)
-           (or (numberp low) (null low))
-           (or (numberp high) (null high)))
-      (cond
-       ((and (null low) (null high))
-        (typespec-eval--integer-range 0 '*))
-       ((null low)
-        (if (and high (<= high 0))
-            (typespec-eval--integer-range (abs high) '*)
-          (typespec-eval--integer-range 0 '*)))
-       ((null high)
-        (if (>= low 0)
-            (typespec-eval--integer-range low '*)
-          (typespec-eval--integer-range 0 '*)))
-       ((>= low 0)
-        (typespec-eval--integer-range low high))
-       ((<= high 0)
-        (typespec-eval--integer-range (abs high) (abs low)))
-       (t
-        (typespec-eval--integer-range 0 (max (abs low) (abs high))))))
-     (t nil))))
-
-(defsubst typespec-eval--float-rounding-range (range kind)
+(defun typespec-eval--float-rounding-range (range kind)
   "Return an integer range for rounding KIND over float RANGE."
   (let* ((low (cadr range))
          (high (caddr range))
@@ -1887,9 +1828,8 @@ Returns a new info plist for shift operations, or a result form for signum/abs."
       (`/
        (if (or (eq low1 '*) (eq low2 '*) (eq high1 '*) (eq high2 '*))
            nil
-         (let* ((denoms (list low2 high2))
-                (zero-in-range (and (<= (min low2 high2) 0.0)
-                                    (<= 0.0 (max low2 high2)))))
+         (let ((zero-in-range (and (<= (min low2 high2) 0.0)
+                                   (<= 0.0 (max low2 high2)))))
            (unless zero-in-range
              (let* ((candidates (list (/ low1 low2) (/ low1 high2)
                                       (/ high1 low2) (/ high1 high2)))
