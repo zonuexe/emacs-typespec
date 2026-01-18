@@ -260,6 +260,10 @@ A fixnum range is (integer 'most-negative-fixnum 'most-positive-fixnum)."
   "Return non-nil if FORM is a record type."
   (eq form 'record))
 
+(defsubst typespec-eval--class-type-p (form)
+  "Return non-nil if FORM is a `(:class CLASS)` type."
+  (and (consp form) (eq (car form) :class)))
+
 (defsubst typespec-eval--rx-type-p (form)
   "Return non-nil if FORM is an `(rx ...)` type."
   (and (consp form) (eq (car form) 'rx)))
@@ -333,6 +337,24 @@ For symbol types, returns the type-category."
     (`(rx . ,_) 'string)
     ((pred symbolp) (typespec-eval--type-category guard-type))
     (_ nil)))
+
+(defun typespec-eval--class-subtype-p (sub super)
+  "Return non-nil if class SUB is a subclass of SUPER."
+  (cond
+   ((eq sub super) t)
+   ((and (fboundp 'child-of-class-p)
+         (ignore-errors (child-of-class-p sub super))))
+   (t nil)))
+
+(defun typespec-eval--class-symbol (form)
+  "Return class symbol from FORM if possible."
+  (cond
+   ((typespec-eval--class-type-p form) (cadr form))
+   ((symbolp form) form)
+   ((typespec-eval--const-p form)
+    (let ((val (typespec-eval--const-value form)))
+      (and (symbolp val) val)))
+   (t nil)))
 
 (defun typespec-eval--get-type-base-category (type-name)
   "Get the base type category for TYPE-NAME via its predicate's typespec.
@@ -770,6 +792,34 @@ Also considers :guard-defined types via their base type."
       (typespec-eval--eval-predicate arg #'integerp
                         #'typespec-eval--integer-type-p
                         #'typespec-eval--non-integer-type-p)))))
+
+(defun typespec-eval--eval-object-of-class-p (object class)
+  "Evaluate `object-of-class-p` over OBJECT and CLASS."
+  (let* ((object (typespec-eval--eval object))
+         (class (typespec-eval--eval class))
+         (class-sym (typespec-eval--class-symbol class)))
+    (cond
+     ((and (typespec-eval--const-p object)
+           (typespec-eval--const-p class)
+           (fboundp 'object-of-class-p))
+      (typespec-eval--make-const
+       (ignore-errors
+         (object-of-class-p (typespec-eval--const-value object)
+                            (typespec-eval--const-value class)))))
+     ((and (typespec-eval--const-p object)
+           class-sym
+           (fboundp 'object-of-class-p))
+      (typespec-eval--make-const
+       (ignore-errors
+         (object-of-class-p (typespec-eval--const-value object) class-sym))))
+     ((and (typespec-eval--class-type-p object)
+           class-sym)
+      (let ((obj-class (cadr object)))
+        (if (and (symbolp obj-class)
+                 (typespec-eval--class-subtype-p obj-class class-sym))
+            (typespec-eval--make-const t)
+          (typespec-eval--make-const nil))))
+     (t 'boolean))))
 
 (defun typespec-eval--eval-if-rx-narrowing (pred then else)
   "Return an `(rx ...)` type when PRED narrows THEN with ELSE nil.
@@ -4071,6 +4121,8 @@ If LIST-ONLY is non-nil, only handle list types."
      (typespec-eval--eval-predicate arg #'closurep))
     (`(module-function-p ,arg)
      (typespec-eval--eval-predicate arg #'module-function-p))
+    (`(object-of-class-p ,object ,class)
+     (typespec-eval--eval-object-of-class-p object class))
     (`(string-empty-p ,arg)
      (typespec-eval--eval-predicate arg #'string-empty-p
                        (lambda (form) (equal form '(const "")))

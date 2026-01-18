@@ -1597,6 +1597,24 @@
   (should (equal (typespec-eval '(number 0 1))
                  '(number 0 1))))
 
+(ert-deftest typespec-eval-class-types ()
+  "Test `(:class ...)` and `object-of-class-p` evaluation."
+  (require 'eieio)
+  (defclass typespec-eval-parent () ())
+  (defclass typespec-eval-child (typespec-eval-parent) ())
+  (should (equal (typespec-eval '(:class typespec-eval-parent))
+                 '(:class typespec-eval-parent)))
+  (should (equal (typespec-eval '(object-of-class-p (:class typespec-eval-child)
+                                                   typespec-eval-parent))
+                 '(const t)))
+  (should (equal (typespec-eval '(object-of-class-p (:class typespec-eval-parent)
+                                                   typespec-eval-child))
+                 '(const nil)))
+  (let ((obj (make-instance 'typespec-eval-child)))
+    (should (equal (typespec-eval `(object-of-class-p (const ,obj)
+                                                     typespec-eval-parent))
+                   '(const t)))))
+
 (ert-deftest typespec-eval-integerp-variants ()
   "Test integerp with various integer type variants."
   ;; Test with fixnum
