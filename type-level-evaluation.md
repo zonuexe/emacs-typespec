@@ -227,3 +227,41 @@ Explanation:
   meaning the argument is refined on success and an error is expected on failure.
 - Otherwise the return type is treated as `:guard`, meaning it only refines on
   the true branch and does not imply the false branch complement.
+
+## Numeric Range Evaluation
+
+Type-level evaluation uses a unified representation for numeric ranges to
+enable efficient range arithmetic and type inference. Numeric keyword types
+like `positive-int`, `non-negative-int`, `negative-int`, `non-positive-int`,
+and `fixnum` are normalized to their canonical range forms during evaluation.
+
+### Range Normalization
+
+- `positive-int` → `(integer 1 *)`
+- `non-negative-int` → `(integer 0 *)`
+- `negative-int` → `(integer * -1)`
+- `non-positive-int` → `(integer * 0)`
+- `fixnum` → `(integer most-negative-fixnum most-positive-fixnum)`
+
+This normalization ensures that:
+- Range arithmetic operations (e.g., `1+`, `1-`, `abs`, `cl-signum`) can be
+  applied uniformly to all numeric types.
+- Type inference produces precise range results (e.g., `(1+ fixnum)` returns
+  an expanded integer range rather than a generic `integer` type).
+- Predicate evaluation (e.g., `fixnump`) correctly recognizes ranges that match
+  the keyword's bounds.
+
+### Range Operations
+
+Numeric operations preserve range information when possible:
+- Unary operations (`1+`, `1-`, `abs`, `cl-signum`) compute new ranges from
+  input ranges.
+- Binary operations (`+`, `-`, `*`, `/`, `%`, `mod`) combine ranges when both
+  operands are range types.
+- Comparison operations (`=`, `<`, `>`, etc.) can evaluate to `(const t)` or
+  `(const nil)` when ranges are disjoint or fully contained.
+
+When a range operation produces a result that exactly matches a keyword type's
+bounds (e.g., `fixnum`), the evaluator may preserve the keyword symbol for
+readability, but canonical range forms are preferred for precision and
+consistency.

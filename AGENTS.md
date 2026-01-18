@@ -236,6 +236,7 @@ Alias type symbols are treated as **input aliases** and normalized to canonical 
 - `non-negative-int` → `(integer 0 *)`
 - `negative-int` → `(integer * -1)`
 - `non-positive-int` → `(integer * 0)`
+- `fixnum` → `(integer most-negative-fixnum most-positive-fixnum)`
 
 **Benefits:**
 - Single unified representation for integer and float ranges
@@ -338,7 +339,7 @@ The test suite (`typespec-eval-test.el`) covers:
 - Generic helper functions
 - Edge cases (unknown types, unregistered predicates)
 
-**Test Count:** 98 tests (as of latest implementation)
+**Test Count:** 128 tests (as of latest implementation)
 
 ## Future Extensions
 

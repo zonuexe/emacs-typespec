@@ -1597,5 +1597,410 @@
   (should (equal (typespec-eval '(number 0 1))
                  '(number 0 1))))
 
+(ert-deftest typespec-eval-integerp-variants ()
+  "Test integerp with various integer type variants."
+  ;; Test with fixnum
+  (should (equal (typespec-eval '(integerp fixnum))
+                 '(const t)))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(integerp positive-int))
+                 '(const t)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(integerp (const 1)))
+                 '(const t)))
+  ;; Test with or of const integers
+  (should (equal (typespec-eval '(integerp (or (const 1) (const 5))))
+                 '(const t)))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(integerp non-negative-int))
+                 '(const t)))
+  ;; Test with integer range
+  (should (equal (typespec-eval '(integerp (integer 1 10)))
+                 '(const t))))
+
+(ert-deftest typespec-eval-fixnump-variants ()
+  "Test fixnump with various integer type variants."
+  ;; Test with fixnum type
+  (should (equal (typespec-eval '(fixnump fixnum))
+                 '(const t)))
+  ;; Test with positive-int (should be boolean, not necessarily fixnum)
+  (should (equal (typespec-eval '(fixnump positive-int))
+                 'boolean))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(fixnump (const 1)))
+                 '(const t)))
+  ;; Test with or of const integers (returns boolean, not const t)
+  (should (equal (typespec-eval '(fixnump (or (const 1) (const 5))))
+                 'boolean))
+  ;; Test with integer (should be boolean)
+  (should (equal (typespec-eval '(fixnump integer))
+                 'boolean))
+  ;; Test with non-integer type
+  (should (equal (typespec-eval '(fixnump float))
+                 '(const nil))))
+
+(ert-deftest typespec-eval-natnump-variants ()
+  "Test natnump with various integer type variants."
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(natnump positive-int))
+                 '(const t)))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(natnump non-negative-int))
+                 '(const t)))
+  ;; Test with const positive integer
+  (should (equal (typespec-eval '(natnump (const 1)))
+                 '(const t)))
+  ;; Test with or of const positive integers (returns boolean)
+  (should (equal (typespec-eval '(natnump (or (const 1) (const 5))))
+                 'boolean))
+  ;; Test with fixnum (should be boolean, not necessarily non-negative)
+  (should (equal (typespec-eval '(natnump fixnum))
+                 'boolean))
+  ;; Test with negative-int (should be boolean, not necessarily nil)
+  (should (equal (typespec-eval '(natnump negative-int))
+                 'boolean)))
+
+(ert-deftest typespec-eval-wholenump-variants ()
+  "Test wholenump with various integer type variants."
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(wholenump positive-int))
+                 '(const t)))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(wholenump non-negative-int))
+                 '(const t)))
+  ;; Test with const positive integer
+  (should (equal (typespec-eval '(wholenump (const 1)))
+                 '(const t)))
+  ;; Test with or of const positive integers (returns boolean)
+  (should (equal (typespec-eval '(wholenump (or (const 1) (const 5))))
+                 'boolean))
+  ;; Test with fixnum (should be boolean)
+  (should (equal (typespec-eval '(wholenump fixnum))
+                 'boolean))
+  ;; Test with negative-int (should be boolean, not necessarily nil)
+  (should (equal (typespec-eval '(wholenump negative-int))
+                 'boolean)))
+
+(ert-deftest typespec-eval-zerop-variants ()
+  "Test zerop with various integer type variants."
+  ;; Test with positive-int (should be boolean, could be optimized but currently returns boolean)
+  (should (equal (typespec-eval '(zerop positive-int))
+                 'boolean))
+  ;; Test with non-negative-int (should be boolean, could be zero)
+  (should (equal (typespec-eval '(zerop non-negative-int))
+                 'boolean))
+  ;; Test with const zero
+  (should (equal (typespec-eval '(zerop (const 0)))
+                 '(const t)))
+  ;; Test with const non-zero
+  (should (equal (typespec-eval '(zerop (const 1)))
+                 '(const nil)))
+  ;; Test with or of const integers including zero (returns unknown)
+  (should (equal (typespec-eval '(zerop (or (const 0) (const 1))))
+                 'unknown))
+  ;; Test with or of const non-zero integers (returns unknown)
+  (should (equal (typespec-eval '(zerop (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with fixnum (should be boolean)
+  (should (equal (typespec-eval '(zerop fixnum))
+                 'boolean)))
+
+(ert-deftest typespec-eval-add1-variants ()
+  "Test 1+ with various integer type variants."
+  ;; Test with fixnum (now treated as range, returns expanded range)
+  (should (typespec-eval--integer-range-p (typespec-eval '(1+ fixnum))))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(1+ positive-int))
+                 '(integer 2 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(1+ (const 1)))
+                 '(const 2)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(1+ (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(1+ non-negative-int))
+                 '(integer 1 *)))
+  ;; Test with integer range
+  (should (equal (typespec-eval '(1+ (integer 1 10)))
+                 '(integer 2 11))))
+
+(ert-deftest typespec-eval-sub1-variants ()
+  "Test 1- with various integer type variants."
+  ;; Test with fixnum (now treated as range, returns expanded range)
+  (should (typespec-eval--integer-range-p (typespec-eval '(1- fixnum))))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(1- positive-int))
+                 '(integer 0 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(1- (const 5)))
+                 '(const 4)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(1- (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with non-negative-int (can become negative after subtraction)
+  (should (equal (typespec-eval '(1- non-negative-int))
+                 '(integer -1 *)))
+  ;; Test with integer range
+  (should (equal (typespec-eval '(1- (integer 1 10)))
+                 '(integer 0 9))))
+
+(ert-deftest typespec-eval-abs-variants ()
+  "Test abs with various integer type variants."
+  ;; Test with fixnum (now treated as range, returns expanded range)
+  (should (typespec-eval--integer-range-p (typespec-eval '(abs fixnum))))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(abs positive-int))
+                 '(integer 1 *)))
+  ;; Test with const positive integer
+  (should (equal (typespec-eval '(abs (const 5)))
+                 '(const 5)))
+  ;; Test with const negative integer
+  (should (equal (typespec-eval '(abs (const -5)))
+                 '(const 5)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(abs (or (const 1) (const -5))))
+                 'unknown))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(abs non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with negative-int
+  (should (equal (typespec-eval '(abs negative-int))
+                 '(integer 1 *))))
+
+(ert-deftest typespec-eval-max-variants ()
+  "Test max with various integer type variants."
+  ;; Test with fixnum and positive-int
+  (should (equal (typespec-eval '(max fixnum positive-int))
+                 '(integer 1 *)))
+  ;; Test with const integers
+  (should (equal (typespec-eval '(max (const 1) (const 5)))
+                 '(const 5)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(max (or (const 1) (const 3)) (or (const 2) (const 4))))
+                 'unknown))
+  ;; Test with positive-int and const (returns unknown, not expanded)
+  (should (equal (typespec-eval '(max positive-int (const 10)))
+                 'unknown))
+  ;; Test with integer ranges
+  (should (equal (typespec-eval '(max (integer 1 5) (integer 3 10)))
+                 '(integer 3 10))))
+
+(ert-deftest typespec-eval-min-variants ()
+  "Test min with various integer type variants."
+  ;; Test with fixnum and positive-int (fixnum can be negative, so result is integer)
+  (should (equal (typespec-eval '(min fixnum positive-int))
+                 'integer))
+  ;; Test with const integers
+  (should (equal (typespec-eval '(min (const 1) (const 5)))
+                 '(const 1)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(min (or (const 1) (const 3)) (or (const 2) (const 4))))
+                 'unknown))
+  ;; Test with positive-int and const (returns unknown, not expanded)
+  (should (equal (typespec-eval '(min positive-int (const 10)))
+                 'unknown))
+  ;; Test with integer ranges
+  (should (equal (typespec-eval '(min (integer 1 5) (integer 3 10)))
+                 '(integer 1 5))))
+
+(ert-deftest typespec-eval-floor-variants ()
+  "Test floor with various integer type variants."
+  ;; Test with fixnum (now treated as range, but floor returns integer for integer input)
+  (should (equal (typespec-eval '(floor fixnum))
+                 'integer))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(floor positive-int))
+                 '(integer 1 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(floor (const 5)))
+                 '(const 5)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(floor (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(floor non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with float (should return integer)
+  (should (equal (typespec-eval '(floor (float 1.5 2.5)))
+                 '(integer 1 2))))
+
+(ert-deftest typespec-eval-ceiling-variants ()
+  "Test ceiling with various integer type variants."
+  ;; Test with fixnum (now treated as range, but ceiling returns integer for integer input)
+  (should (equal (typespec-eval '(ceiling fixnum))
+                 'integer))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(ceiling positive-int))
+                 '(integer 1 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(ceiling (const 5)))
+                 '(const 5)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(ceiling (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(ceiling non-negative-int))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-round-variants ()
+  "Test round with various integer type variants."
+  ;; Test with fixnum (now treated as range, but round returns integer for integer input)
+  (should (equal (typespec-eval '(round fixnum))
+                 'integer))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(round positive-int))
+                 '(integer 1 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(round (const 5)))
+                 '(const 5)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(round (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(round non-negative-int))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-truncate-variants ()
+  "Test truncate with various integer type variants."
+  ;; Test with fixnum (now treated as range, but truncate returns integer for integer input)
+  (should (equal (typespec-eval '(truncate fixnum))
+                 'integer))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(truncate positive-int))
+                 '(integer 1 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(truncate (const 5)))
+                 '(const 5)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(truncate (or (const 1) (const 5))))
+                 'unknown))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(truncate non-negative-int))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-logand-variants ()
+  "Test logand with various integer type variants."
+  ;; Test with fixnum and positive-int
+  (should (equal (typespec-eval '(logand fixnum positive-int))
+                 'integer))
+  ;; Test with const integers
+  (should (equal (typespec-eval '(logand (const 5) (const 3)))
+                 '(const 1)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(logand (or (const 1) (const 5)) (or (const 2) (const 6))))
+                 'unknown))
+  ;; Test with non-negative-int (should return non-negative)
+  (should (equal (typespec-eval '(logand non-negative-int non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(logand positive-int positive-int))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-logior-variants ()
+  "Test logior with various integer type variants."
+  ;; Test with fixnum and positive-int
+  (should (equal (typespec-eval '(logior fixnum positive-int))
+                 'integer))
+  ;; Test with const integers
+  (should (equal (typespec-eval '(logior (const 5) (const 3)))
+                 '(const 7)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(logior (or (const 1) (const 5)) (or (const 2) (const 6))))
+                 'unknown))
+  ;; Test with non-negative-int (should return non-negative)
+  (should (equal (typespec-eval '(logior non-negative-int non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(logior positive-int positive-int))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-logxor-variants ()
+  "Test logxor with various integer type variants."
+  ;; Test with fixnum and positive-int
+  (should (equal (typespec-eval '(logxor fixnum positive-int))
+                 'integer))
+  ;; Test with const integers
+  (should (equal (typespec-eval '(logxor (const 5) (const 3)))
+                 '(const 6)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(logxor (or (const 1) (const 5)) (or (const 2) (const 6))))
+                 'unknown))
+  ;; Test with non-negative-int (should return non-negative)
+  (should (equal (typespec-eval '(logxor non-negative-int non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(logxor positive-int positive-int))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-logcount-variants ()
+  "Test logcount with various integer type variants."
+  ;; Test with fixnum
+  (should (equal (typespec-eval '(logcount fixnum))
+                 '(integer 0 *)))
+  ;; Test with positive-int
+  (should (equal (typespec-eval '(logcount positive-int))
+                 '(integer 0 *)))
+  ;; Test with const integer
+  (should (equal (typespec-eval '(logcount (const 5)))
+                 '(const 2)))
+  ;; Test with or of const integers
+  (should (equal (typespec-eval '(logcount (or (const 1) (const 5))))
+                 '(or (const 1) (const 2))))
+  ;; Test with non-negative-int
+  (should (equal (typespec-eval '(logcount non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with integer
+  (should (equal (typespec-eval '(logcount integer))
+                 '(integer 0 *))))
+
+(ert-deftest typespec-eval-ash-variants ()
+  "Test ash with various integer type variants."
+  ;; Test with fixnum and integer count
+  (should (equal (typespec-eval '(ash fixnum integer))
+                 'integer))
+  ;; Test with positive-int and integer count
+  (should (equal (typespec-eval '(ash positive-int integer))
+                 'integer))
+  ;; Test with const integers
+  (should (equal (typespec-eval '(ash (const 5) (const 2)))
+                 '(const 20)))
+  ;; Test with or of const integers (returns unknown, not expanded)
+  (should (equal (typespec-eval '(ash (or (const 1) (const 5)) (or (const 1) (const 2))))
+                 'unknown))
+  ;; Test with non-negative-int (should return non-negative if count is non-negative)
+  (should (equal (typespec-eval '(ash non-negative-int non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with positive-int and non-negative count
+  (should (equal (typespec-eval '(ash positive-int non-negative-int))
+                 '(integer 0 *)))
+  ;; Test with positive-int and integer count (should return integer)
+  (should (equal (typespec-eval '(ash positive-int integer))
+                 'integer)))
+
+(ert-deftest typespec-eval-arithmetic-variants ()
+  "Test arithmetic operations with various integer type variants."
+  ;; Test addition with fixnum and positive-int
+  (should (equal (typespec-eval '(+ fixnum positive-int))
+                 'integer))
+  ;; Test addition with positive-int and positive-int
+  (should (equal (typespec-eval '(+ positive-int positive-int))
+                 '(integer 2 *)))
+  ;; Test addition with const integers
+  (should (equal (typespec-eval '(+ (const 1) (const 5)))
+                 '(const 6)))
+  ;; Test addition with or of const integers (expanded)
+  (should (equal (typespec-eval '(+ (or (const 1) (const 3)) (or (const 2) (const 4))))
+                 '(or (const 3) (const 5) (const 7))))
+  ;; Test multiplication with positive-int
+  (should (equal (typespec-eval '(* positive-int positive-int))
+                 'integer))
+  ;; Test subtraction with positive-int
+  (should (equal (typespec-eval '(- positive-int positive-int))
+                 'integer))
+  ;; Test division with positive-int
+  (should (equal (typespec-eval '(/ positive-int positive-int))
+                 'integer)))
+
 (provide 'typespec-eval-test)
 ;;; typespec-eval-test.el ends here

@@ -112,12 +112,24 @@ Common numeric shorthand (recommended):
 - `non-positive-int` — `(integer * 0)`
 - `positive-float` — `(float (0) *)`
 - `negative-float` — `(float * (0))`
+- `fixnum` — `(integer most-negative-fixnum most-positive-fixnum)`
 
 Range notation uses `*` for an unbounded side. For example,
 `(integer * 10)` means any integer <= 10, and `(integer 0 *)` means
 any integer >= 0. Bounds are inclusive by default.
 To indicate an exclusive bound, wrap it in a list: `(integer (0) *)`
 means greater than 0, and `(integer * (10))` means less than 10.
+
+**Normalization policy**: Keyword types like `positive-int`, `non-negative-int`,
+`negative-int`, `non-positive-int`, and `fixnum` are treated as **input aliases**
+and normalized to their canonical range forms during type-level evaluation.
+For example, `positive-int` is normalized to `(integer 1 *)` internally, and
+operations on these types return the canonical range forms rather than the
+keyword symbols. This ensures consistent range arithmetic and simplifies
+internal processing. Output types may preserve the original keyword when the
+range exactly matches the keyword's bounds (e.g., `fixnum` is preserved when
+the range is exactly `(integer most-negative-fixnum most-positive-fixnum)`),
+but in general, canonical range forms are preferred for precision.
 
 Notes:
 

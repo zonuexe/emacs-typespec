@@ -138,6 +138,32 @@
   "Return non-nil if FORM is a `(real LOW HIGH)` range."
   (typespec-eval--range-p form 'real))
 
+(defsubst typespec-eval--integer-bound-min (bound)
+  "Return the inclusive minimum value for integer BOUND."
+  (cond
+   ((eq bound '*) nil)
+   ((numberp bound) bound)
+   ((and (consp bound) (numberp (car bound))) (1+ (car bound)))
+   (t nil)))
+
+(defsubst typespec-eval--integer-bound-max (bound)
+  "Return the inclusive maximum value for integer BOUND."
+  (cond
+   ((eq bound '*) nil)
+   ((numberp bound) bound)
+   ((and (consp bound) (numberp (car bound))) (1- (car bound)))
+   (t nil)))
+
+(defsubst typespec-eval--fixnum-range-p (form)
+  "Return non-nil if FORM is a fixnum range.
+A fixnum range is (integer 'most-negative-fixnum 'most-positive-fixnum)."
+  (and (typespec-eval--integer-range-p form)
+       (let ((low (typespec-eval--integer-bound-min (cadr form)))
+             (high (typespec-eval--integer-bound-max (caddr form))))
+         (and (numberp low) (numberp high)
+              (= low most-negative-fixnum)
+              (= high most-positive-fixnum)))))
+
 (defsubst typespec-eval--integer-type-p (form)
   "Return non-nil if FORM is an integer-like type."
   (or (memq form '(int integer fixnum bignum
@@ -589,7 +615,7 @@ all map successfully, return a simplified `(or ...)` of results."
             (typespec-eval--make-const (funcall fn val))
           'unknown)))
      ;; Simple type symbols - preserve as-is for compatibility
-     ((memq arg '(integer int fixnum bignum))
+     ((memq arg '(integer int bignum))
       'integer)
      ((memq arg '(float number real))
       (if (eq arg 'float) 'float 'number))
@@ -729,6 +755,21 @@ Also considers :guard-defined types via their base type."
            (not (funcall type-true-p guard-base)))
       (typespec-eval--make-const nil))
      (t 'boolean))))
+
+(defun typespec-eval--eval-integerp (arg)
+  "Evaluate `integerp` over ARG with const-or folding."
+  (let ((arg (typespec-eval--eval arg)))
+    (cond
+     ((and (consp arg) (eq (car arg) 'or)
+           (seq-every-p (lambda (item)
+                          (and (typespec-eval--const-p item)
+                               (integerp (typespec-eval--const-value item))))
+                        (cdr arg)))
+      (typespec-eval--make-const t))
+     (t
+      (typespec-eval--eval-predicate arg #'integerp
+                        #'typespec-eval--integer-type-p
+                        #'typespec-eval--non-integer-type-p)))))
 
 (defun typespec-eval--eval-if-rx-narrowing (pred then else)
   "Return an `(rx ...)` type when PRED narrows THEN with ELSE nil.
@@ -1531,22 +1572,6 @@ STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
     (list (+ (car bound) delta)))
    (t nil)))
 
-(defsubst typespec-eval--integer-bound-min (bound)
-  "Return the inclusive minimum value for integer BOUND."
-  (cond
-   ((eq bound '*) nil)
-   ((numberp bound) bound)
-   ((and (consp bound) (numberp (car bound))) (1+ (car bound)))
-   (t nil)))
-
-(defsubst typespec-eval--integer-bound-max (bound)
-  "Return the inclusive maximum value for integer BOUND."
-  (cond
-   ((eq bound '*) nil)
-   ((numberp bound) bound)
-   ((and (consp bound) (numberp (car bound))) (1- (car bound)))
-   (t nil)))
-
 (defun typespec-eval--integer-range-from (form)
   "Return an `(integer LOW HIGH)` range for FORM, or nil."
   (cond
@@ -1555,13 +1580,21 @@ STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
    ((eq form 'non-negative-int) (typespec-eval--integer-range 0 '*))
    ((eq form 'negative-int) (typespec-eval--integer-range '* -1))
    ((eq form 'non-positive-int) (typespec-eval--integer-range '* 0))
-   ((memq form '(int integer fixnum bignum))
+   ((eq form 'fixnum)
+    (typespec-eval--integer-range most-negative-fixnum most-positive-fixnum))
+   ((eq form 'fixnum)
+    (typespec-eval--integer-range most-negative-fixnum most-positive-fixnum))
+   ((memq form '(int integer bignum))
     (typespec-eval--integer-range '* '*))
    ((typespec-eval--const-p form)
     (let ((val (typespec-eval--const-value form)))
       (when (integerp val)
         (typespec-eval--integer-range val val))))
    (t nil)))
+
+(defsubst typespec-eval--range-preserving-integer-type-p (form)
+  "Return non-nil if FORM should preserve its integer range."
+  (memq form '(positive-int non-negative-int negative-int non-positive-int)))
 
 (defun typespec-eval--minmax-range (ranges op)
   "Return a range for min/max over RANGES using OP."
@@ -1705,7 +1738,14 @@ Alias types are normalized to canonical range forms."
      ((eq type 'integer)
       (let ((lo (if low-excl (and (numberp low) (1+ low)) low))
             (hi (if high-excl (and (numberp high) (1- high)) high)))
-        (typespec-eval--integer-range (or lo '*) (or hi '*))))
+        ;; Check if range matches fixnum bounds exactly
+        (cond
+         ((and (numberp lo) (numberp hi)
+               (= lo most-negative-fixnum) (= hi most-positive-fixnum)
+               (not low-excl) (not high-excl))
+          'fixnum)
+         (t
+          (typespec-eval--integer-range (or lo '*) (or hi '*))))))
      ;; Float range - ensure float values
      (t
       (let ((lo (cond ((null low) '*)
@@ -2051,6 +2091,8 @@ Returns a new info plist for shift operations, or a result form for signum/abs."
      ((typespec-eval--float-range-p arg)
       (or (typespec-eval--float-rounding-range arg kind) 'integer))
      ((typespec-eval--integer-range-p arg) arg)
+     ((typespec-eval--range-preserving-integer-type-p arg)
+      (or (typespec-eval--integer-range-from arg) 'integer))
      ((typespec-eval--integer-type-p arg) 'integer)
      ((typespec-eval--number-type-p arg) 'integer)
      (t 'unknown))))
@@ -2207,6 +2249,41 @@ Return nil when options cannot be enumerated or exceed the limit."
                  (consts (mapcar #'typespec-eval--make-const uniq)))
             (typespec-eval--simplify-or consts)))))))
 
+(defun typespec-eval--integer-range-source-p (form)
+  "Return non-nil if FORM should participate in integer range arithmetic."
+  (or (and (typespec-eval--const-p form)
+           (integerp (typespec-eval--const-value form)))
+      (typespec-eval--range-preserving-integer-type-p form)))
+
+(defun typespec-eval--integer-range-arith (args op)
+  "Return an integer range for ARGS and OP, or nil if unknown."
+  (when (and (memq op (list #'+ #'- #'*))
+             (seq-every-p #'typespec-eval--integer-range-source-p args))
+    (let* ((ranges (mapcar #'typespec-eval--integer-range-from args))
+           (lo (cadr (car ranges)))
+           (hi (caddr (car ranges))))
+      (dolist (range (cdr ranges))
+        (let ((low2 (cadr range))
+              (high2 (caddr range)))
+          (cond
+           ((eq op #'+)
+            (setq lo (if (or (eq lo '*) (eq low2 '*)) '* (+ lo low2))
+                  hi (if (or (eq hi '*) (eq high2 '*)) '* (+ hi high2))))
+           ((eq op #'-)
+            (setq lo (if (or (eq lo '*) (eq high2 '*)) '* (- lo high2))
+                  hi (if (or (eq hi '*) (eq low2 '*)) '* (- hi low2))))
+           ((eq op #'*)
+            (let ((bounds (list lo hi low2 high2)))
+              (if (seq-some (lambda (bound) (eq bound '*)) bounds)
+                  (setq lo '* hi '*)
+                (let* ((cands (list (* lo low2) (* lo high2)
+                                    (* hi low2) (* hi high2)))
+                       (cmin (apply #'min cands))
+                       (cmax (apply #'max cands)))
+                  (setq lo cmin hi cmax))))))))
+      (unless (and (eq lo '*) (eq hi '*))
+        (typespec-eval--integer-range lo hi)))))
+
 (defun typespec-eval--eval-arith (args op &optional zero-value)
   "Evaluate arithmetic OP over ARGS.
 If all ARGS are numeric consts, return a const result.
@@ -2236,6 +2313,7 @@ ZERO-VALUE is used when ARGS is empty."
             (typespec-eval--make-const (apply op values))
           'unknown)))
      ((typespec-eval--arith-const-options args op))
+     ((typespec-eval--integer-range-arith args op))
      ((typespec-eval--float-range-arith args op))
      (t (typespec-eval--arith-type args)))))
 
@@ -2347,6 +2425,12 @@ ZERO-VALUE is used when ARGS is empty."
       (typespec-eval--make-const
        (ash (typespec-eval--const-value value)
             (typespec-eval--const-value count))))
+     ((and (typespec-eval--non-negative-int-type-p value)
+           (typespec-eval--non-negative-int-type-p count))
+      '(integer 0 *))
+     ((and (eq value 'positive-int)
+           (typespec-eval--integer-type-p count))
+      'integer)
      ((and (typespec-eval--non-negative-int-type-p value)
            (typespec-eval--integer-type-p count))
       '(integer 0 *))
@@ -3432,10 +3516,16 @@ If LIST-ONLY is non-nil, only handle list types."
             (typespec-eval--make-const (apply op values))
           'unknown)))
      ((seq-every-p #'typespec-eval--integer-type-p args)
-      (let ((ranges (mapcar #'typespec-eval--integer-range-from args)))
-        (if (seq-every-p #'identity ranges)
-            (or (typespec-eval--minmax-range ranges op) 'integer)
-          'integer)))
+      (let* ((ranges (mapcar #'typespec-eval--integer-range-from args))
+             (range (and (seq-every-p #'identity ranges)
+                         (typespec-eval--minmax-range ranges op))))
+        (cond
+         (range
+          (if (and (typespec-eval--fixnum-range-p range)
+                   (not (seq-every-p (lambda (arg) (eq arg 'fixnum)) args)))
+              'integer
+            range))
+         (t 'integer))))
      ((and (seq-every-p #'typespec-eval--number-type-p args)
            (seq-some #'typespec-eval--float-type-p args))
       (let ((ranges (mapcar #'typespec-eval--float-range-from args)))
@@ -3845,9 +3935,7 @@ If LIST-ONLY is non-nil, only handle list types."
                        #'typespec-eval--string-type-p
                        #'typespec-eval--non-string-type-p))
     (`(integerp ,arg)
-     (typespec-eval--eval-predicate arg #'integerp
-                       #'typespec-eval--integer-type-p
-                       #'typespec-eval--non-integer-type-p))
+     (typespec-eval--eval-integerp arg))
     (`(floatp ,arg)
      (typespec-eval--eval-predicate arg #'floatp
                        #'typespec-eval--float-type-p
@@ -3864,7 +3952,10 @@ If LIST-ONLY is non-nil, only handle list types."
                        #'typespec-eval--non-negative-int-type-p))
     (`(fixnump ,arg)
      (typespec-eval--eval-predicate arg #'fixnump
-                       (typespec-eval--type-eq-p 'fixnum)))
+                       (lambda (form)
+                         (or (eq form 'fixnum)
+                             (typespec-eval--fixnum-range-p form)))
+                       #'typespec-eval--non-integer-type-p))
     (`(bignump ,arg)
      (typespec-eval--eval-predicate arg #'bignump
                        (typespec-eval--type-eq-p 'bignum)))
