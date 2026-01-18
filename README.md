@@ -47,7 +47,7 @@ Simple function type:
 (typespec #'my-identity (:forall (a) (function (a) a)))
 ```
 
-より複雑な例を考えてみましょう。
+Let's consider a more complex example.
 
 ```elisp
 (defun my-times2 (n)
