@@ -24,6 +24,8 @@
 
 ;;; Code:
 
+(require 'seq)
+
 (defsubst typespec-eval--const-p (form)
   "Return non-nil if FORM is a `(const VALUE)` expression."
   (and (consp form)
@@ -130,6 +132,13 @@
 (defsubst typespec-eval--real-range-p (form)
   "Return non-nil if FORM is a `(real LOW HIGH)` range."
   (typespec-eval--range-p form 'real))
+
+(defun typespec-eval--list-of-symbols-p (value)
+  "Return non-nil if VALUE is a proper list of symbols."
+  (and (listp value)
+       (or (not (fboundp 'proper-list-p))
+           (proper-list-p value))
+       (seq-every-p #'symbolp value)))
 
 (provide 'typespec-eval-core)
 

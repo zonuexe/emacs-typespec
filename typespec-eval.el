@@ -31,6 +31,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'typespec-eval-core)
+(require 'typespec-eval-var)
 
 (defsubst typespec-eval--integer-bound-min (bound)
   "Return the inclusive minimum value for integer BOUND."
@@ -3816,7 +3817,10 @@ If LIST-ONLY is non-nil, only handle list types."
     (`(value-of ,arg)
      (typespec-eval--eval-value-of arg))
     (`(var ,sym)
-     (list 'var sym))
+     (let ((result (typespec-eval-var--eval sym)))
+       (pcase result
+         (`(unresolved ,value) (typespec-eval--eval value))
+         (_ result))))
     (`(plist-key-of ,plist)
      (typespec-eval--eval-plist-key-of plist))
     (`(plist-value-of ,plist)

@@ -1544,6 +1544,12 @@
                  nil)))
     '(rx bos (+ digit) eos))))
 
+(defconst typespec-eval-orders '(asc desc))
+
+(defcustom typespec-eval-custom "ok"
+  "Typespec eval defcustom test."
+  :type 'string)
+
 (ert-deftest typespec-eval-doc-types ()
   "Test core type forms mentioned in the docs are evaluable."
   (should (equal (typespec-eval '(diff string string))
@@ -1614,6 +1620,83 @@
     (should (equal (typespec-eval `(object-of-class-p (const ,obj)
                                                      typespec-eval-parent))
                    '(const t)))))
+
+(ert-deftest typespec-eval-var-value-of ()
+  "Test resolving `(var SYMBOL)` and `(value-of ...)`."
+  (should (equal (typespec-eval '(var 'typespec-eval-orders))
+                 '(:tuple (const asc) (const desc))))
+  (should (equal (typespec-eval '(value-of (var 'typespec-eval-orders)))
+                 '(or (const asc) (const desc))))
+  (should (equal (typespec-eval '(var 'typespec-eval-custom))
+                 'string))
+  (should (equal (typespec-eval '(var 'emacs-major-version))
+                 `(const ,emacs-major-version)))
+  (let* ((sym 'minibuffer-frame-alist)
+         (custom-type (and (fboundp 'custom-variable-p)
+                           (custom-variable-p sym)
+                           (if (fboundp 'custom-variable-type)
+                               (custom-variable-type sym)
+                             (get sym 'custom-type))))
+         (expected (if custom-type
+                       (typespec-eval-var--custom-type-to-typespec custom-type)
+                     '(var 'minibuffer-frame-alist))))
+    (should (equal (typespec-eval '(var 'minibuffer-frame-alist))
+                   expected))))
+
+(ert-deftest typespec-eval-custom-type-to-typespec ()
+  "Test `typespec-eval-var--custom-type-to-typespec` conversions."
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'sexp)
+                 'mixed))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'symbol)
+                 'symbol))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'variable)
+                 'symbol))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'face)
+                 'symbol))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'coding-system)
+                 'symbol))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'fringe-bitmap)
+                 'symbol))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'integer)
+                 'integer))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'natnum)
+                 '(integer 0 *)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'regexp)
+                 'string))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'file)
+                 'string))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'directory)
+                 'string))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'color)
+                 'string))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'key)
+                 'string))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'key-sequence)
+                 'string))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'function)
+                 'function))
+  (should (equal (typespec-eval-var--custom-type-to-typespec 'hook)
+                 '(list function)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec '(const 42))
+                 '(const 42)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(choice (const 1) (const 2) symbol))
+                 '(or (const 1) (const 2) symbol)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(repeat (cons symbol sexp)))
+                 '(list (cons symbol mixed))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(repeat (cons :format "%v"
+                                 (symbol :tag "Parameter")
+                                 (sexp :tag "Value"))))
+                 '(list (cons symbol mixed))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(cons (symbol :tag "Parameter")
+                         (sexp :tag "Value")))
+                 '(cons symbol mixed)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(choice (repeat (cons symbol sexp)) string))
+                 '(or (list (cons symbol mixed)) string))))
 
 (ert-deftest typespec-eval-integerp-variants ()
   "Test integerp with various integer type variants."

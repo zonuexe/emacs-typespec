@@ -49,6 +49,8 @@ Type-level evaluator that performs constant folding and type inference for types
 
 **Note**: This evaluator focuses on **type-level evaluation** (constant folding, type inference, and range arithmetic). Some type constructs that require full type checking (e.g., `(:class CLASS)`, `(:forall ...)`, `(var SYMBOL)`, `(benevolent T)`) are passed through unchanged, as they are intended to be processed by full type checkers rather than the evaluator.
 
+**Variable resolution**: `typespec-eval-var.el` avoids depending on `typespec-eval--eval`. It returns `(unresolved TYPE)` for defcustom-derived types and leaves `(var SYMBOL)` otherwise. The main evaluator resolves `(unresolved ...)` when it is safe to do so. This keeps dependencies one-way while still allowing type-level evaluation to collapse custom variable types.
+
 ### Core Architecture
 
 #### 1. Type Category System
