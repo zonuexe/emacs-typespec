@@ -1649,6 +1649,12 @@
                  'mixed))
   (should (equal (typespec-eval-var--custom-type-to-typespec 'symbol)
                  'symbol))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(symbol :completions ("alpha" "width")))
+                 '(or (const alpha) (const width))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(string :completions ("alpha" "width")))
+                 '(or (const "alpha") (const "width"))))
   (should (equal (typespec-eval-var--custom-type-to-typespec 'variable)
                  'symbol))
   (should (equal (typespec-eval-var--custom-type-to-typespec 'face)
@@ -1679,12 +1685,49 @@
                  '(list function)))
   (should (equal (typespec-eval-var--custom-type-to-typespec '(const 42))
                  '(const 42)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec '(const :args (foo)))
+                 '(const foo)))
   (should (equal (typespec-eval-var--custom-type-to-typespec
                   '(choice (const 1) (const 2) symbol))
                  '(or (const 1) (const 2) symbol)))
   (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(radio (const 1) (const 2) symbol))
+                 '(or (const 1) (const 2) symbol)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(choice (const :tag "Yes" t)
+                           (const :tag "No" nil)
+                           (other :tag "Ask" foo)))
+                 '(or (const t) (const nil) (const foo))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(list integer string function))
+                 '(:tuple integer string function)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(group integer string function))
+                 '(:tuple integer string function)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(vector integer string))
+                 '(vector (or integer string))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(alist :key-type symbol :value-type integer))
+                 '(:alist symbol integer)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(alist))
+                 '(:alist mixed mixed)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(plist :value-type integer))
+                 '(:plist symbol integer)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(plist))
+                 '(:plist symbol mixed)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(set (const :bold) (const :italic)))
+                 '(list (or (const :bold) (const :italic)))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
                   '(repeat (cons symbol sexp)))
                  '(list (cons symbol mixed))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(restricted-sexp :match-alternatives (integerp 't 'nil)))
+                 '(or (const t) (const nil) mixed)))
   (should (equal (typespec-eval-var--custom-type-to-typespec
                   '(repeat (cons :format "%v"
                                  (symbol :tag "Parameter")
@@ -1696,7 +1739,55 @@
                  '(cons symbol mixed)))
   (should (equal (typespec-eval-var--custom-type-to-typespec
                   '(choice (repeat (cons symbol sexp)) string))
-                 '(or (list (cons symbol mixed)) string))))
+                 '(or (list (cons symbol mixed)) string)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(choice (function-item shell-bookmark-name-from-default-directory)
+                           (function-item shell-bookmark-name-from-buffer-name)
+                           function))
+                 '(or (const shell-bookmark-name-from-default-directory)
+                      (const shell-bookmark-name-from-buffer-name)
+                      function)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(radio (function-item :tag "Sort by usage and newness" ecomplete-decay)
+                          (function-item :tag "Sort by times used" ecomplete-usage)
+                          (function-item :tag "Sort by newness" ecomplete-newness)
+                          (function :tag "Other")))
+                 '(or (const ecomplete-decay)
+                      (const ecomplete-usage)
+                      (const ecomplete-newness)
+                      function)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(alist :key-type (symbol) :value-type (symbol)))
+                 '(:alist symbol symbol)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(restricted-sexp
+                    :tag "Default width of bottom dividers"
+                    :match-alternatives (window-divider-width-valid-p)))
+                 'mixed))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(alist :key-type (choice (string :tag "Display name")
+                                            (const :tag "Default" t))
+                          :value-type (cons :tag "Dimensions"
+                                            (integer :tag "Width")
+                                            (integer :tag "Height"))))
+                 '(:alist (or string (const t)) (cons integer integer))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(choice (repeat directory) (const bibinputs) (const texinputs)))
+                 '(or (list string) (const bibinputs) (const texinputs))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(cons (integer :tag "numrows") (integer :tag "numcols")))
+                 '(cons integer integer)))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(repeat (group (regexp :tag "Match") (sexp :tag "Type"))))
+                 '(list (:tuple string mixed))))
+  (should (equal (typespec-eval-var--custom-type-to-typespec
+                  '(choice :menu-tag "Line Spacing For Ordinary Text"
+                           :tag "Line Spacing For Ordinary Text"
+                           (number :tag "Line Spacing")
+                           (cons :tag "Landscape/Portrait"
+                                 (number :tag "Landscape Line Spacing")
+                                 (number :tag "Portrait Line Spacing"))))
+                 '(or number (cons number number)))))
 
 (ert-deftest typespec-eval-integerp-variants ()
   "Test integerp with various integer type variants."

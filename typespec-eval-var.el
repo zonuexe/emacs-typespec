@@ -39,21 +39,6 @@
   (and (eq (get sym 'risky-local-variable) t)
        (stringp (symbol-file sym 'defvar))))
 
-(defun typespec-eval-var--custom-strip-keywords (form)
-  "Return FORM with custom keyword arguments removed."
-  (cond
-   ((consp form)
-    (let ((out nil)
-          (tail form))
-      (while tail
-        (let ((item (car tail)))
-          (if (and (symbolp item) (keywordp item))
-              (setq tail (cddr tail))
-            (push (typespec-eval-var--custom-strip-keywords item) out)
-            (setq tail (cdr tail)))))
-      (nreverse out)))
-   (t form)))
-
 (defun typespec-eval-var--custom-type-symbol (sym)
   "Return a typespec symbol for custom type SYM."
   (pcase sym
@@ -81,22 +66,168 @@
     ('hook '(list function))
     (_ sym)))
 
+(defconst typespec-eval-var--custom-keywords
+  '(:args :tag :menu-tag :value :doc :format :complete :completions
+    :options :match-alternatives :key-type :value-type)
+  "Known custom type keyword arguments to ignore when parsing.")
+
+(defun typespec-eval-var--custom-keyword-p (value)
+  "Return non-nil if VALUE is a known custom type keyword."
+  (and (keywordp value)
+       (memq value typespec-eval-var--custom-keywords)))
+
+(defun typespec-eval-var--custom-strip-keywords (form)
+  "Return FORM with custom keyword arguments removed."
+  (cond
+   ((consp form)
+    (let ((out nil)
+          (tail form))
+      (while tail
+        (let ((item (car tail)))
+          (if (typespec-eval-var--custom-keyword-p item)
+              (setq tail (cddr tail))
+            (push (typespec-eval-var--custom-strip-keywords item) out)
+            (setq tail (cdr tail)))))
+      (nreverse out)))
+   (t form)))
+
+(defun typespec-eval-var--custom-args (form)
+  "Return positional arguments from custom type FORM."
+  (let ((args nil)
+        (tail (cdr form)))
+    (while tail
+      (cond
+       ((eq (car tail) :args)
+        (setq args (cadr tail))
+        (setq tail nil))
+       ((typespec-eval-var--custom-keyword-p (car tail))
+        (setq tail (cddr tail)))
+       (t
+        (push (car tail) args)
+        (setq tail (cdr tail)))))
+    (nreverse args)))
+
+(defun typespec-eval-var--custom-kw (form key default)
+  "Return KEY value from custom type FORM, or DEFAULT."
+  (let ((tail (cdr form))
+        (value default))
+    (while tail
+      (when (eq (car tail) key)
+        (setq value (cadr tail)))
+      (setq tail (cddr tail)))
+    value))
+
+(defun typespec-eval-var--completion-const (value fallback)
+  "Return a `(const ...)` for VALUE based on FALLBACK type."
+  (cond
+   ((eq fallback 'string)
+    (cond
+     ((stringp value) (list 'const value))
+     ((symbolp value) (list 'const (symbol-name value)))
+     (t nil)))
+   (t
+    (cond
+     ((symbolp value) (list 'const value))
+     ((stringp value) (list 'const (intern value)))
+     (t nil)))))
+
+(defun typespec-eval-var--custom-completions-to-typespec (form fallback)
+  "Return typespec from :completions in FORM or FALLBACK."
+  (let ((completions (typespec-eval-var--custom-kw form :completions nil)))
+    (if (and (listp completions) completions)
+        (cons 'or (delq nil (mapcar (lambda (item)
+                                      (typespec-eval-var--completion-const item fallback))
+                                    completions)))
+      fallback)))
+
 (defun typespec-eval-var--custom-type-to-typespec (form)
   "Convert custom type FORM into a typespec form."
-  (let ((form (typespec-eval-var--custom-strip-keywords form)))
-    (pcase form
-      (`(repeat ,item)
-       (list 'list (typespec-eval-var--custom-type-to-typespec item)))
-      (`(cons ,a ,b)
-       (list 'cons (typespec-eval-var--custom-type-to-typespec a)
-             (typespec-eval-var--custom-type-to-typespec b)))
-      (`(choice . ,items)
-       (cons 'or (mapcar #'typespec-eval-var--custom-type-to-typespec items)))
-      (`(const ,value)
-       (list 'const value))
-      (`(,sym) (and (symbolp sym) (typespec-eval-var--custom-type-symbol sym)))
-      ((pred symbolp) (typespec-eval-var--custom-type-symbol form))
-      (_ 'unknown))))
+  (pcase form
+    ((pred symbolp)
+     (typespec-eval-var--custom-type-symbol form))
+    (`(string . ,_)
+     (typespec-eval-var--custom-completions-to-typespec form 'string))
+    (`(symbol . ,_)
+     (typespec-eval-var--custom-completions-to-typespec form 'symbol))
+    (`(cons . ,_)
+     (let* ((args (typespec-eval-var--custom-args form))
+            (a (nth 0 args))
+            (b (nth 1 args)))
+       (if (and a b)
+           (list 'cons (typespec-eval-var--custom-type-to-typespec a)
+                 (typespec-eval-var--custom-type-to-typespec b))
+         'unknown)))
+    (`(list . ,_)
+     (cons :tuple
+           (mapcar #'typespec-eval-var--custom-type-to-typespec
+                   (typespec-eval-var--custom-args form))))
+    (`(group . ,_)
+     (cons :tuple
+           (mapcar #'typespec-eval-var--custom-type-to-typespec
+                   (typespec-eval-var--custom-args form))))
+    (`(vector . ,_)
+     (list 'vector
+           (cons 'or (mapcar #'typespec-eval-var--custom-type-to-typespec
+                             (typespec-eval-var--custom-args form)))))
+    (`(alist . ,_)
+     (let ((key-type (typespec-eval-var--custom-kw form :key-type 'sexp))
+           (value-type (typespec-eval-var--custom-kw form :value-type 'sexp)))
+       (list :alist
+             (typespec-eval-var--custom-type-to-typespec key-type)
+             (typespec-eval-var--custom-type-to-typespec value-type))))
+    (`(plist . ,_)
+     (let ((key-type (typespec-eval-var--custom-kw form :key-type 'symbol))
+           (value-type (typespec-eval-var--custom-kw form :value-type 'sexp)))
+       (list :plist
+             (typespec-eval-var--custom-type-to-typespec key-type)
+             (typespec-eval-var--custom-type-to-typespec value-type))))
+    (`(choice . ,_)
+     (cons 'or (mapcar #'typespec-eval-var--custom-type-to-typespec
+                       (typespec-eval-var--custom-args form))))
+    (`(radio . ,_)
+     (cons 'or (mapcar #'typespec-eval-var--custom-type-to-typespec
+                       (typespec-eval-var--custom-args form))))
+    (`(const . ,_)
+     (let* ((args (typespec-eval-var--custom-args form))
+            (value (car args)))
+       (if (null args) 'unknown (list 'const value))))
+    (`(other . ,_)
+     (let ((value (car (typespec-eval-var--custom-args form))))
+       (if (null value) 'mixed (list 'const value))))
+    (`(function-item . ,_)
+     (let ((fn (car (typespec-eval-var--custom-args form))))
+       (if fn (list 'const fn) 'unknown)))
+    (`(variable-item . ,_)
+     (let ((var (car (typespec-eval-var--custom-args form))))
+       (if var (list 'const var) 'unknown)))
+    (`(set . ,_)
+     (list 'list (cons 'or (mapcar #'typespec-eval-var--custom-type-to-typespec
+                                   (typespec-eval-var--custom-args form)))))
+    (`(repeat . ,_)
+     (let ((item (car (typespec-eval-var--custom-args form))))
+       (if item
+           (list 'list (typespec-eval-var--custom-type-to-typespec item))
+         'unknown)))
+    (`(restricted-sexp . ,_)
+     (let ((criteria (typespec-eval-var--custom-kw form :match-alternatives nil))
+           (consts nil)
+           (has-predicate nil))
+       (when (and criteria (listp criteria))
+         (dolist (item criteria)
+           (pcase item
+             (`(quote ,value) (push (list 'const value) consts))
+             ((pred symbolp) (setq has-predicate t)))))
+       (cond
+        ((and has-predicate consts) (cons 'or (append (nreverse consts) '(mixed))))
+        (has-predicate 'mixed)
+        (consts (cons 'or (nreverse consts)))
+        (t 'mixed))))
+    (_
+     (let ((stripped (typespec-eval-var--custom-strip-keywords form)))
+       (pcase stripped
+         (`(,sym) (and (symbolp sym) (typespec-eval-var--custom-type-symbol sym)))
+         ((pred symbolp) (typespec-eval-var--custom-type-symbol stripped))
+         (_ 'unknown))))))
 
 (defun typespec-eval-var--const-type (value)
   "Return a typespec form for constant VALUE."

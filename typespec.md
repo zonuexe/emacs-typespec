@@ -755,6 +755,13 @@ Defcustom-style forms are intentionally **not** part of the core typespec.
 If a consumer chooses to support them, they should be treated as extensions
 and documented separately to avoid confusion with `cl-typep` semantics.
 
+When interpreting defcustom types, `:completions` (added in Emacs 31) may be
+treated as a fixed value set; in this case the values are used as a concrete
+union of allowed constants. `:complete` (a completion function hook) is **not**
+compatible with typespec evaluation and should be ignored by type consumers.
+If a safe, deterministic mapping is proposed, support for `:complete` may be
+added as an optional extension.
+
 ## Polymorphism / Type Variables
 
 To express OCaml-style polymorphism:
