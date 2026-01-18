@@ -2608,14 +2608,14 @@ When N is 1, behaves like `cdr`."
             (if (listp tail)
                 (cons :tuple tail)
               (typespec-eval--eval (cdr list)))))))
-    ((and (consp list) (eq (car list) :tuple))
-     (let* ((parts (typespec-eval--tuple-split (cdr list)))
-            (prefix (car parts))
-            (tail (cdr parts))
-            (elem-types (append prefix
-                                (when (typespec-eval--list-elem-type tail)
-                                  (list (typespec-eval--list-elem-type tail))))))
-       (list 'list (typespec-eval--simplify-or elem-types))))
+     ((and (consp list) (eq (car list) :tuple))
+      (let* ((parts (typespec-eval--tuple-split (cdr list)))
+             (prefix (car parts))
+             (tail (cdr parts))
+             (elem-types (append prefix
+                                 (when (typespec-eval--list-elem-type tail)
+                                   (list (typespec-eval--list-elem-type tail))))))
+        (list 'list (typespec-eval--simplify-or elem-types))))
      ((typespec-eval--list-elem-type list)
       (list 'list (typespec-eval--list-elem-type list)))
      (t 'unknown))))
@@ -3065,8 +3065,8 @@ REMOVE is ignored in the type evaluator."
                         (typespec-eval--const-value key)
                         (when default (typespec-eval--const-value default))))
           'unknown)))
-    ((typespec-eval--plist-type-p plist)
-     'unknown)
+     ((typespec-eval--plist-type-p plist)
+      'unknown)
      ((typespec-eval--plist-of-p plist)
       (let* ((entry-type (and (typespec-eval--const-p key)
                               (typespec-eval--plist-of-entry-type
@@ -3091,12 +3091,12 @@ REMOVE is ignored in the type evaluator."
             (typespec-eval--make-const
              (plist-member plist-val (typespec-eval--const-value key)))
           'unknown)))
-    ((typespec-eval--plist-type-p plist)
-     'unknown)
-    ((typespec-eval--plist-of-p plist)
-     (typespec-eval--simplify-or
-      (list (typespec-eval--make-const nil)
-            '(list+ mixed))))
+     ((typespec-eval--plist-type-p plist)
+      'unknown)
+     ((typespec-eval--plist-of-p plist)
+      (typespec-eval--simplify-or
+       (list (typespec-eval--make-const nil)
+             '(list+ mixed))))
      (t 'unknown))))
 
 (defun typespec-eval--eval-seq-length (sequence)
