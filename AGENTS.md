@@ -51,6 +51,8 @@ Type-level evaluator that performs constant folding and type inference for types
 
 **Variable resolution**: `typespec-eval-var.el` avoids depending on `typespec-eval--eval`. It returns `(unresolved TYPE)` for defcustom-derived types and leaves `(var SYMBOL)` otherwise. The main evaluator resolves `(unresolved ...)` when it is safe to do so. This keeps dependencies one-way while still allowing type-level evaluation to collapse custom variable types.
 
+**Nil normalization policy**: the evaluator treats `nil` as a constant value and normalizes it to `(const nil)` whenever possible. This keeps constant folding and `or`/`and` simplification consistent and avoids mixing raw `nil` with types. List-handling functions should explicitly return `(const nil)` when the value is known to be nil.
+
 ### Core Architecture
 
 #### 1. Type Category System

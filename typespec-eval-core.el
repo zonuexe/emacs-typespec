@@ -51,6 +51,12 @@
   "Return a `(const VALUE)` expression."
   (list 'const value))
 
+(defsubst typespec-eval--normalize-const-nil (form)
+  "Normalize FORM so that nil is represented as `(const nil)`."
+  (if (null form)
+      (typespec-eval--make-const nil)
+    form))
+
 (defsubst typespec-eval--non-empty-string-expr ()
   "Return the canonical non-empty string type expression."
   '(and string (not (const ""))))
@@ -67,6 +73,7 @@
 (defsubst typespec-eval--always-nil-p (form)
   "Return non-nil if FORM is known to be nil."
   (or (equal form '(const nil))
+      (null form)
       (eq form 'null)))
 
 (defsubst typespec-eval--const-integer-value (form)

@@ -333,7 +333,8 @@ Considers :guard-defined types via their base type."
                     (if (and (consp item) (eq (car item) 'or))
                         (cdr item)
                       (list item)))))
-    (setq items (seq-uniq flat #'equal)))
+    (setq items (seq-uniq (mapcar #'typespec-eval--normalize-const-nil flat)
+                          #'equal)))
   (cond
    ((null items) 'never)
    ((null (cdr items)) (car items))
@@ -2605,12 +2606,12 @@ When N is 1, behaves like `cdr`."
          (nval (typespec-eval--const-integer-value n)))
     (cond
      ((and (typespec-eval--always-nil-p list) (integerp nval))
-      'nil)
+      (typespec-eval--make-const nil))
      ((and (typespec-eval--const-p list) (integerp nval))
       (let ((val (typespec-eval--const-value list)))
         (if (listp val)
             (if (null val)
-                'nil
+                (typespec-eval--make-const nil)
               (typespec-eval--make-const (nthcdr nval val)))
           'unknown)))
      ((and (typespec-eval--alist-type-p list) (integerp nval))
