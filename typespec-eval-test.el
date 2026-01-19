@@ -547,6 +547,8 @@
 (ert-deftest typespec-eval-string-suffix-p ()
   (should (equal (typespec-eval '(string-suffix-p "c" "abc"))
                  '(const t)))
+  (should (equal (typespec-eval '(string-suffix-p "" "abc"))
+                 '(const t)))
   (should (equal (typespec-eval '(string-suffix-p "z" "abc"))
                  '(const nil)))
   (should (equal (typespec-eval '(string-suffix-p string string))
@@ -584,6 +586,8 @@
 
 (ert-deftest typespec-eval-string-prefix-p ()
   (should (equal (typespec-eval '(string-prefix-p "a" "abc"))
+                 '(const t)))
+  (should (equal (typespec-eval '(string-prefix-p "" "abc"))
                  '(const t)))
   (should (equal (typespec-eval '(string-prefix-p "a" "xyz"))
                  '(const nil)))

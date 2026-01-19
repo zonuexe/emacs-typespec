@@ -289,7 +289,7 @@
      (typespec-eval-op-object-of-class-p object class))
     (`(string-empty-p ,arg)
      (typespec-eval-op-unary-predicate arg #'string-empty-p
-                       (lambda (form) (equal form '(const "")))
+                       #'typespec-eval--const-empty-string-p
                        #'typespec-eval-types-non-string-type-p))
     (`(string-blank-p ,arg)
      (typespec-eval-op-unary-predicate arg #'string-blank-p

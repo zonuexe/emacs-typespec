@@ -235,6 +235,10 @@
    ((typespec-eval-struct-list-elem-type form)
     (typespec-eval-struct-alist-entry-types
      (typespec-eval-struct-list-elem-type form)))
+   ((typespec-eval-struct-sequence-elem-type form)
+    (or (typespec-eval-struct-alist-entry-types
+         (typespec-eval-struct-sequence-elem-type form))
+        (cons 'unknown 'unknown)))
    ((and (consp form) (eq (car form) :tuple))
     (let* ((parts (typespec-eval-struct-tuple-split (cdr form)))
            (prefix (car parts))

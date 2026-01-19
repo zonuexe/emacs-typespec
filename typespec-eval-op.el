@@ -1172,6 +1172,10 @@ ZERO-VALUE is used when ARGS is empty."
       (typespec-eval-simplify-or
        (list (typespec-eval--make-const nil)
              (list 'list (typespec-eval-struct-list-elem-type list)))))
+     ((typespec-eval-struct-sequence-elem-type list)
+      (typespec-eval-simplify-or
+       (list (typespec-eval--make-const nil)
+             (list 'list (typespec-eval-struct-sequence-elem-type list)))))
      ((and (consp list) (eq (car list) :tuple))
       (let* ((parts (typespec-eval-struct-tuple-split (cdr list)))
              (prefix (car parts))
@@ -2036,9 +2040,7 @@ FN is applied to const values; the type structure is preserved for typed args."
          (pad (and (typespec-eval--const-p padding)
                    (typespec-eval--const-value padding)))
          (pad-ok (or (null padding) (stringp pad) (characterp pad)))
-         (start-ok (or (null start)
-                       (and (typespec-eval--const-p start)
-                            (memq (typespec-eval--const-value start) '(t nil))))))
+         (start-ok (typespec-eval--boolish-const-p start)))
     (cond
      ((and (stringp sval) (integerp len) pad-ok start-ok)
       (typespec-eval--make-const
@@ -2056,6 +2058,11 @@ FN is applied to const values; the type structure is preserved for typed args."
         (string (typespec-eval--eval string))
         (ignore-case (when ignore-case (typespec-eval--eval ignore-case))))
     (cond
+     ((and (typespec-eval--const-empty-string-p prefix)
+           (or (typespec-eval--const-p string)
+               (typespec-eval-types-string-type-p string))
+           (typespec-eval--boolish-const-p ignore-case))
+      (typespec-eval--make-const t))
      ((and (consp prefix) (eq (car prefix) 'or))
       (let ((mapped
              (typespec-eval-simplify-map-const-or
@@ -2078,9 +2085,7 @@ FN is applied to const values; the type structure is preserved for typed args."
            (typespec-eval--const-p string)
            (stringp (typespec-eval--const-value prefix))
            (stringp (typespec-eval--const-value string))
-           (or (null ignore-case)
-               (and (typespec-eval--const-p ignore-case)
-                    (memq (typespec-eval--const-value ignore-case) '(t nil)))))
+           (typespec-eval--boolish-const-p ignore-case))
       (typespec-eval--make-const
        (string-prefix-p (typespec-eval--const-value prefix)
                         (typespec-eval--const-value string)
@@ -2195,6 +2200,11 @@ STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
         (string (typespec-eval--eval string))
         (ignore-case (when ignore-case (typespec-eval--eval ignore-case))))
     (cond
+     ((and (typespec-eval--const-empty-string-p suffix)
+           (or (typespec-eval--const-p string)
+               (typespec-eval-types-string-type-p string))
+           (typespec-eval--boolish-const-p ignore-case))
+      (typespec-eval--make-const t))
      ((and (consp suffix) (eq (car suffix) 'or))
       (typespec-eval-simplify-map-const-or
        suffix
@@ -2213,9 +2223,7 @@ STRING, SEPARATORS, OMIT-NULLS, and TRIM are evaluated."
            (typespec-eval--const-p string)
            (stringp (typespec-eval--const-value suffix))
            (stringp (typespec-eval--const-value string))
-           (or (null ignore-case)
-               (and (typespec-eval--const-p ignore-case)
-                    (memq (typespec-eval--const-value ignore-case) '(t nil)))))
+           (typespec-eval--boolish-const-p ignore-case))
       (typespec-eval--make-const
        (string-suffix-p (typespec-eval--const-value suffix)
                         (typespec-eval--const-value string)

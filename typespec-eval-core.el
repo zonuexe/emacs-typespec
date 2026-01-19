@@ -37,6 +37,18 @@
   "Return the VALUE from a `(const VALUE)` FORM."
   (cadr form))
 
+(defsubst typespec-eval--boolish-const-p (form)
+  "Return non-nil if FORM is nil or a `(const t)`/`(const nil)`."
+  (or (null form)
+      (and (typespec-eval--const-p form)
+           (memq (typespec-eval--const-value form) '(t nil)))))
+
+(defsubst typespec-eval--const-empty-string-p (form)
+  "Return non-nil if FORM is a constant empty string."
+  (and (typespec-eval--const-p form)
+       (stringp (typespec-eval--const-value form))
+       (string-empty-p (typespec-eval--const-value form))))
+
 (defsubst typespec-eval--unconst (form)
   "Return FORM without a const wrapper when possible."
   (if (typespec-eval--const-p form)
