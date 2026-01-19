@@ -54,7 +54,7 @@
 
 (defsubst typespec-eval-types-fixnum-range-p (form)
   "Return non-nil if FORM is a fixnum range.
-A fixnum range is (integer 'most-negative-fixnum 'most-positive-fixnum)."
+A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)."
   (and (typespec-eval--integer-range-p form)
        (let ((low (typespec-eval-types-integer-bound-min (cadr form)))
              (high (typespec-eval-types-integer-bound-max (caddr form))))

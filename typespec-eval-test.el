@@ -1594,6 +1594,49 @@
                  nil)))
     '(rx bos (+ digit) eos))))
 
+(ert-deftest typespec-eval-rx-string-predicate-narrowing ()
+  "Test rx narrowing for string predicates besides `string-match-p`."
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-match (rx bos (+ digit) eos) a)
+                   a
+                 nil)))
+    '(rx bos (+ digit) eos)))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-prefix-p "foo" a)
+                   a
+                 nil)))
+    '(rx bos "foo")))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-suffix-p "bar" a)
+                   a
+                 nil)))
+    '(rx "bar" eos)))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string= "foo" a)
+                   a
+                 nil)))
+    '(rx bos "foo" eos)))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-equal "foo" a)
+                   a
+                 nil)))
+    '(rx bos "foo" eos))))
+
 (defconst typespec-eval-orders '(asc desc))
 
 (defcustom typespec-eval-custom "ok"
