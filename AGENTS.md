@@ -55,6 +55,8 @@ Type-level evaluator that performs constant folding and type inference for types
 
 ### Core Architecture
 
+The logic below is implemented in `typespec-eval-types.el`, `typespec-eval-op.el`, `typespec-eval-numeric.el`, and related modules. For the actual function names and files, see “Module Layout and Function Naming”.
+
 #### 1. Type Category System
 
 The evaluator uses a **type category system** for efficient type comparisons:
@@ -279,10 +281,13 @@ The evaluator uses generic helpers to reduce code duplication:
 #### Constant Folding
 
 ```elisp
-(defun typespec-eval--eval-const-fold (arg fn pred &optional type-in type-out type-p fallback)
-  "Evaluate FN over ARG with constant folding."
+(defun typespec-eval-simplify-unary-const-fold (arg fn pred &optional type-in type-out type-p fallback)
+  "Apply unary FN over ARG with constant folding and type inference.
+ARG is evaluated via `typespec-eval--eval' (declare-function in typespec-eval-simplify)."
   ...)
 ```
+
+Lives in `typespec-eval-simplify.el`.  Uses `declare-function` for `typespec-eval--eval`.
 
 ### Main Evaluation Function
 
@@ -299,13 +304,34 @@ The `typespec-eval--eval` function uses `pcase` for pattern matching:
   "Evaluate a typespec FORM into a simplified type/value expression."
   (pcase form
     (`(stringp ,arg)
-     (typespec-eval--eval-predicate arg #'stringp
-                       #'typespec-eval--string-type-p
-                       #'typespec-eval--non-string-type-p))
+     (typespec-eval-op-unary-predicate arg #'stringp
+                       #'typespec-eval-types-string-type-p
+                       #'typespec-eval-types-non-string-type-p))
     (`(+ . ,args)
-     (typespec-eval--eval-arith args #'+ 0))
+     (typespec-eval-op-arith args #'+ 0))
     ...))
 ```
+
+### Module Layout and Function Naming
+
+Evaluator logic is split into modules by responsibility. Naming follows the module prefix.
+
+| Module | Prefix | Role |
+|--------|--------|------|
+| **typespec-eval.el** | `typespec-eval`, `typespec-eval--` | Entry point `typespec-eval`, dispatcher `typespec-eval--eval` (pcase). |
+| **typespec-eval-core.el** | `typespec-eval--` | Const, nil/non-nil, string helpers, range constructors. `const-p`, `make-const`, `always-nil-p`, `always-non-nil-p`, `non-empty-string-p`, `integer-range`, `float-range`, etc. |
+| **typespec-eval-types.el** | `typespec-eval-types-` | Type category and type predicates. `type-category`, `type-category-with-guard`, `*-type-p` (e.g. `string-type-p`, `integer-type-p`), `non-*-type-p` (e.g. `non-string-type-p`), guard resolution (`type-predicate-name`, `get-guard-return-type`, `guard-type-base`, `get-type-base-category`). |
+| **typespec-eval-struct.el** | `typespec-eval-struct-` | List/alist/plist/cons/tuple structure. **Form predicates** (structure shape): `alist-form-p`, `plist-form-p`, `cons-form-p`. Accessors: `alist-key-type`, `alist-value-type`, `plist-key-type`, `plist-value-type`, `list-elem-type`, `list-of-p`, `plist-append-entry-types`, `alist-entry-types`, `cons-key-type`, `cons-value-type`, tuple helpers. |
+| **typespec-eval-simplify.el** | `typespec-eval-simplify-` | `simplify-or`, `simplify-and`, `unary-const-fold`, `const-string-options`, `const-regexp-options`, `concat-combinations`, `string-or-char-p`, intersect/merge helpers. |
+| **typespec-eval-numeric.el** | `typespec-eval-numeric-` | Numeric range: `numeric-range-info`, `numeric-range-to-form`, `numeric-range-shift`, `numeric-range-abs`, `numeric-range-signum`, float/integer arith, `float-range-combine`, etc. |
+| **typespec-eval-op.el** | `typespec-eval-op-` | One-to-one op handlers (e.g. `arith`, `cons`, `unary-predicate`, `numeric-unary`, `string-unary`, `if`, `equality`). Functions are alphabetically ordered. Uses `declare-function` only for `typespec-eval--eval`. |
+| **typespec-eval-var.el** | `typespec-eval-var--` | Variable resolution: `var--eval`, `var--const-type`, defcustom/custom handling. |
+
+**Naming rules**
+
+- **`*-type-p`** (in `typespec-eval-types`): “is this a T type?” (type category). Used for inference and non-T checks.
+- **`*-form-p`** (in `typespec-eval-struct`): “does this match the form of an alist/plist/cons?” (structure shape). Distinct from type-category predicates.
+- **`always-nil-p` / `always-non-nil-p`**: in `typespec-eval-core` as `typespec-eval--always-nil-p` and `typespec-eval--always-non-nil-p`.
 
 ## Key Design Principles
 
@@ -329,6 +355,7 @@ The `typespec-eval--eval` function uses `pcase` for pattern matching:
 
 ### 4. Code Organization
 
+- **Module layout**: See “Module Layout and Function Naming” in the typespec-eval section. `typespec-eval--eval` dispatches to `typespec-eval-op-*`; type predicates live in `typespec-eval-types-*`; structure form predicates in `typespec-eval-struct-*-form-p`; simplify/numeric/var in their own modules.
 - Simple wrapper functions removed (direct calls in `pcase`)
 - Generic helpers encapsulate common patterns
 - `defsubst` used sparingly (only for simple, frequently-called functions)
@@ -343,7 +370,7 @@ The test suite (`typespec-eval-test.el`) covers:
 - Generic helper functions
 - Edge cases (unknown types, unregistered predicates)
 
-**Test Count:** 128 tests (as of latest implementation)
+**Test Count:** 131 tests (as of latest implementation)
 
 ## Future Extensions
 
@@ -365,35 +392,52 @@ The test suite (`typespec-eval-test.el`) covers:
 
 ### Adding a New Predicate
 
-1. Add `pcase` entry in `typespec-eval--eval`:
+1. Add `pcase` entry in `typespec-eval--eval` (typespec-eval.el) that calls `typespec-eval-op-unary-predicate`:
    ```elisp
    (`(new-predicate ,arg)
-    (typespec-eval--eval-predicate arg #'new-predicate
-                      #'type-true-predicate
-                      #'type-false-predicate))
+    (typespec-eval-op-unary-predicate arg #'new-predicate
+                      #'typespec-eval-types-new-type-p
+                      #'typespec-eval-types-non-new-type-p))
    ```
 
-2. Define type predicates if needed:
+2. Define type predicates in **typespec-eval-types.el** if needed:
    ```elisp
-   (defsubst typespec-eval--new-type-p (form)
+   (defsubst typespec-eval-types-new-type-p (form)
      "Return non-nil if FORM is a new-type."
      ...)
+   (defun typespec-eval-types-non-new-type-p (form)
+     "Return non-nil if FORM is a known non-new-type."
+     (and-let* ((cat (typespec-eval-types-type-category-with-guard form)))
+       (not (eq cat 'new))))
    ```
+   Also add the category to `typespec-eval-types-type-category` and optionally `typespec-eval-types-type-predicate-name` / guard support.
 
 ### Adding a New Operation
 
-1. Create a generic helper if pattern is reusable:
+1. Define the op handler in **typespec-eval-op.el** (alphabetically), using helpers from struct/simplify/numeric/types/core as needed:
    ```elisp
-   (defun typespec-eval--eval-new-op (arg1 arg2)
-     "Evaluate new operation over ARG1 and ARG2."
+   (defun typespec-eval-op-new-op (arg1 arg2)
+     "Evaluate new-op over ARG1 and ARG2."
      ...)
    ```
 
-2. Add `pcase` entry:
+2. Add `pcase` entry in `typespec-eval--eval` (typespec-eval.el):
    ```elisp
    (`(new-op ,arg1 ,arg2)
-    (typespec-eval--eval-new-op arg1 arg2))
+    (typespec-eval-op-new-op arg1 arg2))
    ```
+
+### Adding a Structure Form Predicate
+
+To add a predicate that detects a **structure shape** (e.g. alist/plist/cons form) in **typespec-eval-struct.el**:
+
+1. Define `typespec-eval-struct-*-form-p` (use `-form-p`, not `-type-p`, to distinguish from type-category predicates in typespec-eval-types):
+   ```elisp
+   (defsubst typespec-eval-struct-new-struct-form-p (value)
+     "Return non-nil if VALUE matches the (new-struct ...) form."
+     (and (consp value) (eq (car value) 'new-struct) ...))
+   ```
+2. Add accessors (e.g. `-key-type`, `-value-type`) and use them from `typespec-eval-op-*` as needed.
 
 ### Supporting Guard Types
 
@@ -424,3 +468,5 @@ These constructs are preserved in the output and should be handled by full type 
 - `type-level-evaluation.md` - Type-level evaluation semantics
 - `typespec-core.el` - Core type system definitions
 - `typespec-eval-test.el` - Test suite
+
+**typespec-eval modules:** `typespec-eval.el`, `typespec-eval-core.el`, `typespec-eval-types.el`, `typespec-eval-struct.el`, `typespec-eval-simplify.el`, `typespec-eval-numeric.el`, `typespec-eval-op.el`, `typespec-eval-var.el`. See “Module Layout and Function Naming” for prefixes and roles.

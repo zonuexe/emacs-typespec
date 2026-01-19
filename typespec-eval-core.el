@@ -51,7 +51,7 @@
   "Return a `(const VALUE)` expression."
   (list 'const value))
 
-(defsubst typespec-eval--normalize-const-nil (form)
+(defun typespec-eval--normalize-const-nil (form)
   "Normalize FORM so that nil is represented as `(const nil)`."
   (if (null form)
       (typespec-eval--make-const nil)
@@ -75,6 +75,25 @@
   (or (equal form '(const nil))
       (null form)
       (eq form 'null)))
+
+(defsubst typespec-eval--always-non-nil-p (form)
+  "Return non-nil if FORM is known to be non-nil."
+  (cond
+   ((and (typespec-eval--const-p form)
+         (not (null (typespec-eval--const-value form))))
+    t)
+   ((typespec-eval--non-empty-string-p form) t)
+   ((eq form 'string) t)
+   ((memq form '(number integer float real fixnum bignum
+                        positive-int non-negative-int
+                        negative-int non-positive-int
+                        positive-float negative-float
+                        keyword vector hash-table))
+    t)
+   ((and (consp form)
+         (memq (car form) '(list+ cons vector)))
+    t)
+   (t nil)))
 
 (defsubst typespec-eval--const-integer-value (form)
   "Return integer value if FORM is a const integer, otherwise nil."
