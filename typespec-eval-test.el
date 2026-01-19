@@ -21,9 +21,11 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ert)
 (require 'seq)
 (require 'typespec-eval)
+(require 'comp-common)
 
 (ert-deftest typespec-eval-eq ()
   (should (equal (typespec-eval '(eq (const 1) (const 1)))
@@ -44,6 +46,30 @@
                  '(const nil)))   ; strings are not eql unless eq
   (should (equal (typespec-eval '(eql number number)) 'boolean))
   (should (equal (typespec-eval '(eql unknown unknown)) 'boolean)))
+
+(defun typespec-eval-test--collect-argspec-types (argspec)
+  "Return list of type forms from ARGSPEC, ignoring &optional/&rest/&keys."
+  (let (types)
+    (dolist (item argspec (nreverse types))
+      (unless (memq item '(&optional &rest &key &keys &allow-other-keys))
+        (push item types)))))
+
+(ert-deftest typespec-eval-comp-primitive-type-specifiers ()
+  (let ((entries
+         (cl-loop
+          for entry in comp-primitive-type-specifiers
+          for spec = (cadr entry)
+          when (and (consp spec) (eq (car spec) 'function))
+          append (cl-loop
+                  with argspec = (cadr spec)
+                  with ret = (caddr spec)
+                  for type in (append (typespec-eval-test--collect-argspec-types argspec)
+                                      (list ret))
+                  for result = (typespec-eval type)
+                  when (or (eq result 'unknown)
+                           (and (consp result) (eq (car result) 'unresolved)))
+                  collect (list (car entry) type result)))))
+    (should (equal entries nil))))
 
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))

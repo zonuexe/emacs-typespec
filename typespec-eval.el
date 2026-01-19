@@ -72,6 +72,9 @@
     (`(benevolent ,value)
      (list 'benevolent (typespec-eval--eval value)))
     (`(rx . ,_) form)
+    ((and `(member . ,members) (guard (seq-every-p #'atom members)))
+     (typespec-eval-simplify-or
+      (mapcar #'typespec-eval--make-const members)))
     (`(:alist ,key ,value)
      (list :alist (typespec-eval--eval key) (typespec-eval--eval value)))
     (`(:plist ,key ,value)

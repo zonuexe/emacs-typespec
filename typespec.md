@@ -6,9 +6,12 @@ native-compiler type system; instead, it aims to make a dynamic language
 practical by combining TypeScript/PHPStan experience with Lisp best practices
 into a rich, usable type vocabulary.
 
+- **`declare (ftype ...)`** and [elisp_type_hierarchy]
 - [**`cl-typep`**](https://www.gnu.org/software/emacs/manual/html_node/cl/Type-Predicates.html) (predicate-style types)
 - [**`defcustom`***](https://www.gnu.org/software/emacs/manual/html_node/elisp/Customization-Types.html) (user customization type expressions; optional extensions)
 - [**Elsa**](https://github.com/emacs-elsa/Elsa) (static analyzer type language)
+
+[elisp_type_hierarchy]: https://github.com/emacs-mirror/emacs/blob/master/doc/lispref/elisp_type_hierarchy.txt
 
 The goal is a single *pragmatic* type language: it accepts a curated subset of
 `cl-typep` and Elsa, and it allows optional `defcustom`-style extensions.
@@ -16,12 +19,30 @@ Compatibility is one-way: all supported `cl-typep` forms should be accepted by
 this language, but not every expression in this language must be valid in those
 systems.
 
+## Emacs `declare (ftype ...)` Compatibility
+
+Typespec aims to be a **100% superset** of Emacs Lisp `declare (ftype ...)`
+as introduced in Emacs 29.1. Concretely:
+
+- Any type accepted by the native compiler’s constraint system (via
+  `comp-type-spec-to-cstr`) is valid typespec.
+- Typespec may accept additional constructs beyond `ftype`/`comp-cstr`.
+
+The canonical Emacs type hierarchy is included in [`elisp_type_hierarchy.txt`][elisp_type_hierarchy]
+and should be treated as the ground truth for base type relationships.
+
+We do not attempt to enumerate the full set of `ftype`-annotated functions in
+this document; instead, we treat the Emacs native compiler’s accepted type
+specifications as the compatibility baseline and add typespec-only extensions
+on top.
+
 ## Goals
 
 - S-expression syntax with small surface area.
 - Readable by Lisp users; no reader macros required.
 - Avoid type-theory contradictions where practical.
 - Keep a clear escape hatch for “any” and “unknown” values.
+- Allow erasing advanced Typespec forms into `ftype`-compatible declarations.
 
 ## Non-goals
 
