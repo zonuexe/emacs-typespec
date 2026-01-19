@@ -782,9 +782,10 @@ TYPE-PRED is an optional predicate to check evaluated types."
   "Evaluate `(generalize VALUE TARGET)`."
   (let ((value (typespec-eval--eval value))
         (target (typespec-eval--eval target)))
-    (if (typespec-eval--const-p value)
-        target
-      (list 'generalize value target))))
+    (cond
+     ((typespec-eval--const-p value) target)
+     ((typespec-eval-types-type-subtype-p value target) target)
+     (t (list 'generalize value target)))))
 
 (defun typespec-eval-op-generalize-signed (value)
   "Evaluate `(generalize-signed VALUE)`."
@@ -798,6 +799,9 @@ TYPE-PRED is an optional predicate to check evaluated types."
          ((and (floatp val) (> val 0.0)) 'positive-float)
          ((and (floatp val) (< val 0.0)) 'negative-float)
          (t value))))
+     ((and-let* ((cat (typespec-eval-types-type-category-with-guard value)))
+        (memq cat '(integer float number)))
+      value)
      ((memq value '(unknown mixed)) 'never)
      (t 'never))))
 

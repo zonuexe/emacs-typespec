@@ -208,6 +208,26 @@ Note: `number' type returns \\='number, not \\='integer or \\='float."
    ;; Other known built-in type symbols
    ((memq form '(boolean sequence array)) form)))
 
+;;; Subtype checks
+
+(defun typespec-eval-types-type-subtype-p (sub super)
+  "Return non-nil if SUB is a known subtype of SUPER."
+  (let ((subcat (typespec-eval-types-type-category-with-guard sub))
+        (supercat (typespec-eval-types-type-category-with-guard super)))
+    (cond
+     ((or (null subcat) (null supercat)) nil)
+     ((eq subcat supercat) t)
+     ((and (eq supercat 'number)
+           (memq subcat '(integer float number)))
+      t)
+     ((and (eq supercat 'sequence)
+           (memq subcat '(list vector string bool-vector char-table)))
+      t)
+     ((and (eq supercat 'array)
+           (memq subcat '(string vector bool-vector char-table)))
+      t)
+     (t nil))))
+
 ;;; Guard type resolution
 
 (defun typespec-eval-types-type-predicate-name (type-name)
