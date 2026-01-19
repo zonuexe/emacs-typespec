@@ -200,14 +200,60 @@ COMPARE-FN is the comparison function (#\\='eq or #\\='equal)."
      (t 'unknown))))
 
 (defun typespec-eval-op-argspecs (argspecs)
-  "Evaluate ARGSPECS in order, preserving markers like &rest."
-  (mapcar
-   (lambda (spec)
-     (if (and (symbolp spec)
-              (memq spec '(&optional &rest &keys)))
-         spec
-       (typespec-eval--eval spec)))
-   argspecs))
+  "Evaluate ARGSPECS in order, preserving markers like &rest.
+Return `:invalid` if ARGSPECS ordering or structure is invalid."
+  (let ((out nil)
+        (seen-optional nil)
+        (seen-rest nil)
+        (seen-keys nil)
+        (expect-rest nil)
+        (expect-keys nil)
+        (invalid nil))
+    (dolist (spec argspecs)
+      (when (not invalid)
+        (cond
+         ((memq spec '(&optional &rest &keys))
+          (pcase spec
+            ('&optional
+             (if (or seen-optional seen-rest seen-keys expect-rest expect-keys)
+                 (setq invalid t)
+               (setq seen-optional t)
+               (push '&optional out)))
+            ('&rest
+             (if (or seen-rest seen-keys expect-rest expect-keys)
+                 (setq invalid t)
+               (setq seen-rest t expect-rest t)
+               (push '&rest out)))
+            ('&keys
+             (if (or seen-keys expect-rest expect-keys)
+                 (setq invalid t)
+               (setq seen-keys t expect-keys t)
+               (push '&keys out)))))
+         (t
+          (cond
+           (expect-rest
+            (push (typespec-eval--eval spec) out)
+            (setq expect-rest nil))
+           (expect-keys
+            (let ((eval-spec (typespec-eval--eval spec)))
+              (if (or (typespec-eval-struct-plist-form-p eval-spec)
+                      (typespec-eval-struct-plist-of-p eval-spec))
+                  (push eval-spec out)
+                (setq invalid t))
+              (setq expect-keys nil)))
+           (seen-keys
+            (setq invalid t))
+           ((and seen-rest (not expect-rest))
+            (setq invalid t))
+           (t
+            (push (typespec-eval--eval spec) out)))))))
+    (cond
+     (invalid :invalid)
+     (expect-rest :invalid)
+     (expect-keys
+      (push (typespec-eval--eval '(:plist keyword mixed)) out)
+      (nreverse out))
+     (t (nreverse out)))))
 
 (defun typespec-eval-op-arith (args op &optional zero-value)
   "Evaluate arithmetic OP over ARGS.
@@ -784,15 +830,17 @@ TYPE-PRED is an optional predicate to check evaluated types."
 (defun typespec-eval-op-function-type (argspecs ret)
   "Evaluate function type ARGSPECS and RET."
   (let ((argspecs (typespec-eval-op-argspecs argspecs)))
-    (pcase ret
-      (`(:guard ,type)
-       (list 'function argspecs (list :guard (typespec-eval--eval type))))
-      (`(:guard! ,type)
-       (list 'function argspecs (list :guard! (typespec-eval--eval type))))
-      (`(:assert ,type)
-       (list 'function argspecs (list :assert (typespec-eval--eval type))))
-      (_
-       (list 'function argspecs (typespec-eval--eval ret))))))
+    (if (eq argspecs :invalid)
+        'unknown
+      (pcase ret
+        (`(:guard ,type)
+         (list 'function argspecs (list :guard (typespec-eval--eval type))))
+        (`(:guard! ,type)
+         (list 'function argspecs (list :guard! (typespec-eval--eval type))))
+        (`(:assert ,type)
+         (list 'function argspecs (list :assert (typespec-eval--eval type))))
+        (_
+         (list 'function argspecs (typespec-eval--eval ret)))))))
 
 (defun typespec-eval-op-generalize (value target)
   "Evaluate `(generalize VALUE TARGET)`."

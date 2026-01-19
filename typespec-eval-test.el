@@ -1642,6 +1642,18 @@
   (should (equal (typespec-eval '(number 0 1))
                  '(number 0 1))))
 
+(ert-deftest typespec-eval-function-argspecs ()
+  (should (equal (typespec-eval '(function (&keys) integer))
+                 '(function (&keys (:plist keyword mixed)) integer)))
+  (should (equal (typespec-eval '(function (&optional string &rest integer &keys (:plist-of (:name string))) integer))
+                 '(function (&optional string &rest integer &keys (:plist-of (:name string))) integer)))
+  (should (equal (typespec-eval '(function (&rest integer &optional string) integer))
+                 'unknown))
+  (should (equal (typespec-eval '(function (&rest) integer))
+                 'unknown))
+  (should (equal (typespec-eval '(function (&keys string) integer))
+                 'unknown)))
+
 (ert-deftest typespec-eval-class-types ()
   "Test `(:class ...)` and `object-of-class-p` evaluation."
   (require 'eieio)
