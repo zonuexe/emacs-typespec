@@ -663,7 +663,22 @@ RESULT-TYPE is returned when both arguments are string types."
     (cond
      ((eq lhs 'never) 'never)
      ((eq rhs 'never) lhs)
+     ((eq rhs 'mixed) 'never)
      ((equal lhs rhs) 'never)
+     ((and (consp rhs) (eq (car rhs) 'or))
+      (let ((items (cdr rhs))
+            (result lhs))
+        (while (and items (not (eq result 'never)))
+          (setq result (typespec-eval-op-diff result (car items)))
+          (setq items (cdr items)))
+        result))
+     ((and (consp lhs) (eq (car lhs) 'or))
+      (typespec-eval-simplify-or
+       (mapcar (lambda (item) (typespec-eval-op-diff item rhs))
+               (cdr lhs))))
+     ((and (consp rhs) (eq (car rhs) 'diff)
+           (equal (cadr rhs) 'mixed))
+      (typespec-eval-simplify-and (list lhs (caddr rhs))))
      (t (list 'diff lhs rhs)))))
 
 (defun typespec-eval-op-downcast (_value target)

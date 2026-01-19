@@ -1437,6 +1437,14 @@
   (should (equal (typespec-eval '(or (const 1) (const 2) (const 3)))
                  '(or (const 1) (const 2) (const 3)))))
 
+(ert-deftest typespec-eval-diff-simplify ()
+  (should (equal (typespec-eval '(diff string (or string integer)))
+                 'never))
+  (should (equal (typespec-eval '(diff integer (diff mixed integer)))
+                 'integer))
+  (should (equal (typespec-eval '(diff string mixed))
+                 'never)))
+
 (ert-deftest typespec-eval-and-rx-numeric ()
   "Test `and` simplification with `(rx ...)` and numeric types."
   (should (equal (typespec-eval '(and unknown string))
