@@ -1318,6 +1318,9 @@
                  '(const 1)))
   (should (equal (typespec-eval '(plist-get (const (:a 1 :b 2)) (const :c)))
                  '(const nil)))
+  (should (equal (typespec-eval '(plist-get (:plist-of (:name string) (:? :age integer))
+                                            (const :age)))
+                 '(or (const nil) integer)))
   ;; plist-get with non-const plist returns unknown
   (should (equal (typespec-eval '(plist-get (:plist keyword integer) keyword))
                  'unknown))
@@ -1327,7 +1330,9 @@
                  '(const nil)))
   ;; plist-member with non-const plist returns unknown
   (should (equal (typespec-eval '(plist-member (:plist keyword integer) keyword))
-                 'unknown)))
+                 'unknown))
+  (should (equal (typespec-eval '(plist-value-of (:plist-of (:name string) (:? :age integer))))
+                 '(or string (const nil) integer))))
 
 (ert-deftest typespec-eval-member ()
   (should (equal (typespec-eval '(memq 1 (const (1 2 3))))

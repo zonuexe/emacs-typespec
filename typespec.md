@@ -634,6 +634,8 @@ similar to PHPStan array-shapes.
 Keys are typically keywords, but any literal key is allowed (e.g. symbols
 or strings) if that matches the actual plist usage. Use `(:? KEY TYPE)`
 to mark an optional key.
+When a key is optional, its value type is treated as `(or (const nil) TYPE)`
+for plist helpers like `plist-get`/`plist-value-of`.
 
 ## Container Types
 

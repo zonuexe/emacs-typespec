@@ -99,6 +99,10 @@
     (`(,key ,_) key)
     (_ nil)))
 
+(defsubst typespec-eval-struct-plist-of-entry-optional-p (entry)
+  "Return non-nil if plist-of ENTRY is optional."
+  (and (consp entry) (eq (car entry) :?)))
+
 (defsubst typespec-eval-struct-plist-of-entry-value (entry)
   "Return the value type for plist-of ENTRY."
   (pcase entry
@@ -109,8 +113,16 @@
 (defun typespec-eval-struct-plist-of-value-type (value)
   "Return combined value type for plist-of VALUE."
   (typespec-eval-simplify-or
-   (delq nil (mapcar #'typespec-eval-struct-plist-of-entry-value
-                     (typespec-eval-struct-plist-of-entries value)))))
+   (delq nil
+         (mapcar
+          (lambda (entry)
+            (let ((val (typespec-eval-struct-plist-of-entry-value entry)))
+              (when val
+                (if (typespec-eval-struct-plist-of-entry-optional-p entry)
+                    (typespec-eval-simplify-or
+                     (list (typespec-eval--make-const nil) val))
+                  val))))
+          (typespec-eval-struct-plist-of-entries value)))))
 
 (defun typespec-eval-struct-plist-of-entry-type (plist key)
   "Return entry type in PLIST for KEY, or nil if not found."
@@ -118,7 +130,13 @@
                 (lambda (item)
                   (equal key (typespec-eval-struct-plist-of-entry-key item)))
                 (typespec-eval-struct-plist-of-entries plist))))
-    (and entry (typespec-eval-struct-plist-of-entry-value entry))))
+    (when entry
+      (let ((val (typespec-eval-struct-plist-of-entry-value entry)))
+        (when val
+          (if (typespec-eval-struct-plist-of-entry-optional-p entry)
+              (typespec-eval-simplify-or
+               (list (typespec-eval--make-const nil) val))
+            val))))))
 
 ;;; Cons
 
