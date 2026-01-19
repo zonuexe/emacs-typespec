@@ -67,6 +67,13 @@ The return value is also treated as that same refined type.
 In other words, `:assert` is shorthand for “this function returns the
 checked value and refines it on success.”
 
+## `:cause-error` (diagnostic pseudo-type)
+
+Type-level evaluation can return `(:cause-error INFO)` when a call is
+invalid (e.g. wrong number of arguments or wrong argument type). This
+is a diagnostic marker, not a runtime value. Tools may treat it as
+`never` for flow purposes, or preserve it to report detailed errors.
+
 Another example with a state-dependent predicate (allowed here, but not
 inside `if` predicates):
 

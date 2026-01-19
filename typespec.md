@@ -457,6 +457,14 @@ Example usage:
   (function (number) (generalize-signed (const -1))))
 ```
 
+### `:cause-error` (pseudo-type)
+
+`(:cause-error INFO)` is a pseudo-type returned by type-level evaluation
+for invalid calls (e.g. wrong arity or wrong argument type). It is not a
+runtime value, but a diagnostic marker that tools can surface. Static
+analyzers may treat it as equivalent to `never`, or preserve it to keep
+error context.
+
 ### `downcast` (explicit type assertion)
 
 `(downcast T TARGET)` explicitly treats `T` as `TARGET`. This is a deliberate

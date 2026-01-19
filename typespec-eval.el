@@ -26,10 +26,11 @@
 
 ;;; Code:
 
-(require 'cl-lib)
+(eval-when-compile
+  (require 'cl-lib)
+  (require 'subr-x))
 (require 'rx)
 (require 'seq)
-(require 'subr-x)
 (require 'typespec-eval-core)
 (require 'typespec-eval-var)
 (require 'typespec-eval-types)
@@ -61,6 +62,7 @@
      (list :class class))
     (`(:forall ,_ ,body)
      (typespec-eval--eval body))
+    (`(:cause-error . ,_) form)
     (`(function ,argspecs ,ret)
      (typespec-eval-op-function-type argspecs ret))
     (`(generalize ,value ,target)
@@ -598,6 +600,205 @@
 (defun typespec-eval (form)
   "Evaluate FORM in the typespec value/type evaluator."
   (typespec-eval--eval form))
+
+(defun typespec-eval-call--normalize-argspecs (argspecs)
+  "Normalize ARGSPECS and return (NORMALIZED ALLOW-OTHER-KEYS)."
+  (let* ((allow-other-keys (memq '&allow-other-keys argspecs))
+         (argspecs (mapcar (lambda (spec) (if (eq spec '&key) '&keys spec))
+                           argspecs))
+         (argspecs (delq '&allow-other-keys argspecs))
+         (argspecs (typespec-eval-op-argspecs argspecs)))
+    (list argspecs allow-other-keys)))
+
+(defun typespec-eval-call--split-argspecs (argspecs)
+  "Split normalized ARGSPECS into required/optional/rest/keys."
+  (let (required optional rest-type keys-type state)
+    (setq state 'required)
+    (dolist (spec argspecs)
+      (pcase spec
+        ('&optional (setq state 'optional))
+        ('&rest (setq state 'rest))
+        ('&keys (setq state 'keys))
+        (_
+         (pcase state
+           ('required (push spec required))
+           ('optional (push spec optional))
+           ('rest (setq rest-type spec state 'rest-done))
+           ('keys (setq keys-type spec state 'keys-done))))))
+    (list :required (nreverse required)
+          :optional (nreverse optional)
+          :rest rest-type
+          :keys keys-type)))
+
+(defun typespec-eval-call--type-compatible-p (value expected)
+  "Return non-nil if VALUE is compatible with EXPECTED."
+  (let ((value (typespec-eval--eval value))
+        (expected (typespec-eval--eval expected)))
+    (cond
+     ((memq expected '(mixed unknown t)) t)
+     ((equal value expected) t)
+     ((typespec-eval--const-p value)
+      (let* ((val (typespec-eval--const-value value))
+             (cat (typespec-eval-types-type-category-with-guard expected)))
+        (pcase cat
+          ('integer (integerp val))
+          ('float (floatp val))
+          ('number (numberp val))
+          ('string (stringp val))
+          ('symbol (symbolp val))
+          ('list (listp val))
+          ('vector (vectorp val))
+          ('boolean (memq val '(t nil)))
+          (_ nil))))
+     ((and (consp expected) (eq (car expected) 'or))
+      (seq-some (lambda (item)
+                  (typespec-eval-call--type-compatible-p value item))
+                (cdr expected)))
+     ((and (consp expected) (eq (car expected) 'and))
+      (seq-every-p (lambda (item)
+                     (typespec-eval-call--type-compatible-p value item))
+                   (cdr expected)))
+     ((eq (typespec-eval-op-and (list value expected)) 'never) nil)
+     (t t))))
+
+(defun typespec-eval-call--check-key-args (keys-type args allow-other-keys)
+  "Validate keyword ARGS against KEYS-TYPE.
+Return nil on success or a `(:cause-error ...)` form."
+  (let ((pairs (seq-partition args 2)))
+    (catch 'error
+      (dolist (pair pairs)
+        (let* ((key (typespec-eval--eval (car pair)))
+               (val (typespec-eval--eval (cadr pair))))
+          (cond
+           ((typespec-eval-struct-plist-form-p keys-type)
+            (let ((key-type (typespec-eval-struct-plist-key-type keys-type))
+                  (val-type (typespec-eval-struct-plist-value-type keys-type)))
+              (unless (typespec-eval-call--type-compatible-p key key-type)
+                (throw 'error
+                       (typespec-eval--make-cause-error
+                        (list 'wrong-type-argument key-type
+                              (typespec-eval--unconst key)))))
+              (unless (typespec-eval-call--type-compatible-p val val-type)
+                (throw 'error
+                       (typespec-eval--make-cause-error
+                        (list 'wrong-type-argument val-type
+                              (typespec-eval--unconst val)))))))
+           ((typespec-eval-struct-plist-of-p keys-type)
+            (let* ((keyval (and (typespec-eval--const-p key)
+                                (typespec-eval--const-value key)))
+                   (entry-type (and keyval
+                                    (typespec-eval-struct-plist-of-entry-type
+                                     keys-type keyval))))
+              (cond
+               (entry-type
+                (unless (typespec-eval-call--type-compatible-p val entry-type)
+                  (throw 'error
+                         (typespec-eval--make-cause-error
+                          (list 'wrong-type-argument entry-type
+                                (typespec-eval--unconst val))))))
+               (allow-other-keys nil)
+               (t
+                (throw 'error
+                       (typespec-eval--make-cause-error
+                        (list 'wrong-type-argument keys-type
+                              (typespec-eval--unconst key))))))))
+           (t nil))))
+      nil)))
+
+(defun typespec-eval-call--substitute (form sym value)
+  "Substitute SYM with VALUE inside FORM."
+  (cond
+   ((eq form sym) value)
+   ((consp form)
+    (mapcar (lambda (item)
+              (typespec-eval-call--substitute item sym value))
+            form))
+   (t form)))
+
+(defun typespec-eval-call (funspec args)
+  "Evaluate application of FUNSPEC to ARGS.
+Return a typespec result or a `(:cause-error ...)' form."
+  (declare (ftype (function (t list) t)))
+  (cl-block typespec-eval-call--
+    (let ((vars nil)
+          (body funspec))
+      (pcase funspec
+        (`(:forall ,binders ,form)
+         (setq vars binders)
+         (setq body form)))
+      (let ((func (typespec-eval--eval body)))
+        (pcase func
+          (`(function ,argspecs ,ret)
+           (pcase-let* ((`(,norm-argspecs ,allow-other-keys)
+                         (typespec-eval-call--normalize-argspecs argspecs)))
+             (when (eq norm-argspecs :invalid)
+               (cl-return-from typespec-eval-call-- 'unknown))
+             (pcase-let* ((`(:required ,required :optional ,optional
+                                       :rest ,rest-type :keys ,keys-type)
+                           (typespec-eval-call--split-argspecs norm-argspecs))
+                          (args (mapcar #'typespec-eval--eval args))
+                          (nargs (length args))
+                          (nreq (length required))
+                          (nopt (length optional)))
+               (when (< nargs nreq)
+                 (cl-return-from typespec-eval-call--
+                   (typespec-eval--make-cause-error
+                    (list 'wrong-number-of-arguments nargs))))
+               (let* ((positional (min nargs (+ nreq nopt)))
+                      (pos-args (seq-subseq args 0 positional))
+                      (rest-args (seq-subseq args positional))
+                      (bindings nil))
+               (let ((expected (append required optional)))
+                 (cl-labels
+                     ((bind-var (var value)
+                        (when (and (symbolp var) (memq var vars))
+                          (let ((prev (assoc var bindings)))
+                            (if prev
+                                (when (eq (typespec-eval-op-and
+                                           (list (cdr prev) value))
+                                          'never)
+                                  (cl-return-from typespec-eval-call--
+                                    (typespec-eval--make-cause-error
+                                     (list 'wrong-type-argument var
+                                           (typespec-eval--unconst value)))))
+                              (push (cons var value) bindings))))))
+                   (dotimes (idx positional)
+                     (let ((exp (nth idx expected))
+                           (arg (nth idx pos-args)))
+                       (if (and (symbolp exp) (memq exp vars))
+                           (bind-var exp arg)
+                         (unless (typespec-eval-call--type-compatible-p arg exp)
+                           (cl-return-from typespec-eval-call--
+                             (typespec-eval--make-cause-error
+                              (list 'wrong-type-argument exp
+                                    (typespec-eval--unconst arg))))))))
+                   (cond
+                    (keys-type
+                     (when (and rest-args (cl-oddp (length rest-args)))
+                       (cl-return-from typespec-eval-call--
+                         (typespec-eval--make-cause-error
+                          (list 'wrong-number-of-arguments nargs))))
+                     (when-let ((err (typespec-eval-call--check-key-args
+                                      keys-type rest-args allow-other-keys)))
+                       (cl-return-from typespec-eval-call-- err)))
+                    (rest-type
+                     (dolist (arg rest-args)
+                       (unless (typespec-eval-call--type-compatible-p arg rest-type)
+                         (cl-return-from typespec-eval-call--
+                           (typespec-eval--make-cause-error
+                            (list 'wrong-type-argument rest-type
+                                  (typespec-eval--unconst arg)))))))
+                    (t
+                     (when rest-args
+                       (cl-return-from typespec-eval-call--
+                         (typespec-eval--make-cause-error
+                          (list 'wrong-number-of-arguments nargs)))))))
+                 (let ((ret (typespec-eval--eval ret)))
+                   (dolist (binding bindings)
+                     (setq ret (typespec-eval-call--substitute
+                                ret (car binding) (cdr binding))))
+                   ret))))))
+          (_ 'unknown))))))
 
 (provide 'typespec-eval)
 ;;; typespec-eval.el ends here

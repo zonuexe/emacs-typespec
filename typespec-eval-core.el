@@ -63,6 +63,10 @@
   "Return a `(const VALUE)` expression."
   (list 'const value))
 
+(defsubst typespec-eval--make-cause-error (info)
+  "Return a `(:cause-error INFO)` expression."
+  (list :cause-error info))
+
 (defun typespec-eval--normalize-const-nil (form)
   "Normalize FORM so that nil is represented as `(const nil)`."
   (if (null form)

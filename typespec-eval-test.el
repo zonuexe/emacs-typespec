@@ -71,6 +71,37 @@
                   collect (list (car entry) type result)))))
     (should (equal entries nil))))
 
+(ert-deftest typespec-eval-call ()
+  (should (equal (typespec-eval-call '(function () (const t)) '())
+                 '(const t)))
+  (should (equal (typespec-eval-call '(function () (const t)) '(1))
+                 '(:cause-error (wrong-number-of-arguments 1))))
+  (should (equal (typespec-eval-call '(function (number) (const t)) '(1))
+                 '(const t)))
+  (should (equal (typespec-eval-call '(function (number) (const t)) '(natnum))
+                 '(const t)))
+  (should (equal (typespec-eval-call '(function (number) (const t)) '(positive-int))
+                 '(const t)))
+  (should (equal (typespec-eval-call '(function (number) (const t)) '(float))
+                 '(const t)))
+  (should (equal (typespec-eval-call '(function (number) (const t)) '("foo"))
+                 '(:cause-error (wrong-type-argument number "foo"))))
+  (should (equal (typespec-eval-call '(:forall (a) (function (a) a)) '("foo"))
+                 '(const "foo")))
+  (should (equal (typespec-eval-call '(:forall (a) (function (a) a)) '((or "foo" "bar")))
+                 '(or (const "foo") (const "bar")))))
+
+(ert-deftest typespec-eval-call-allow-other-keys ()
+  (should (equal (typespec-eval-call
+                  '(function (&key (:plist-of (:foo string)) &allow-other-keys)
+                             (const t))
+                  '(:foo "a" :bar "b"))
+                 '(const t)))
+  (should (equal (typespec-eval-call
+                  '(function (&key (:plist-of (:foo string))) (const t))
+                  '(:foo "a" :bar "b"))
+                 '(:cause-error (wrong-type-argument (:plist-of (:foo string)) :bar)))))
+
 (defcustom typespec-eval-test--elisp-type-hierarchy-types-alist
   '((boolean null)
     (integer fixnum bignum)
