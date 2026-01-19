@@ -83,6 +83,38 @@ inside `if` predicates):
 `process-live-p` is state-dependent, so it is not allowed in `if` predicates,
 but it is fine inside `:assert` because the check happens at runtime.
 
+## Downcast and Benevolent
+
+### `downcast`
+
+`(downcast VALUE TARGET)` is an explicit cast. At type-evaluation time it
+reduces to `TARGET`, regardless of the inferred type of `VALUE`. This is
+intentionally *unsafe* and is meant to be used only when you have
+out-of-band knowledge that `VALUE` is compatible with `TARGET`.
+
+Type checkers should treat `downcast` as an assertion: it does **not**
+require `VALUE` to be a subtype of `TARGET`, but it should be visible in
+diagnostics when a mismatch would otherwise be flagged.
+
+### `benevolent`
+
+`(benevolent T)` is a **soft constraint** that relaxes strict checking.
+The evaluator preserves the wrapper and only evaluates the inner type:
+
+```
+(benevolent T) => (benevolent (eval T))
+```
+
+Type checkers should treat this as “accept `T` if possible, but allow
+broader values without error.” A practical default policy is:
+
+- If the value’s type is a subtype of `T`, accept it normally.
+- Otherwise, allow it **without widening** the value’s inferred type.
+  This keeps the exact type information while suppressing errors.
+
+This is distinct from an explicit union like `(or T other)`; `benevolent`
+is a *policy marker* rather than a concrete type expansion.
+
 ## Conditional Return Types (Restricted)
 
 To keep conditional types predictable, only a small, safe predicate
