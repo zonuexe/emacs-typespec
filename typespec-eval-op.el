@@ -239,6 +239,7 @@ ZERO-VALUE is used when ARGS is empty."
           'unknown)))
      ((typespec-eval-numeric-arith-const-options args op))
      ((typespec-eval-numeric-integer-range-arith args op))
+     ((typespec-eval-numeric-number-range-arith args op))
      ((typespec-eval-numeric-float-range-arith args op))
      (t (typespec-eval-numeric-arith-type args)))))
 

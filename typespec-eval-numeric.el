@@ -60,6 +60,26 @@
   "Return non-nil if float BOUND is an exclusive integer boundary."
   (and (consp bound) (integerp (car bound))))
 
+(defsubst typespec-eval-numeric-number-bound-value (bound)
+  "Return numeric value for number BOUND, or nil for `*`."
+  (cond
+   ((eq bound '*) nil)
+   ((numberp bound) bound)
+   ((and (consp bound) (numberp (car bound))) (car bound))
+   (t nil)))
+
+(defsubst typespec-eval-numeric-number-bound-exclusive-p (bound)
+  "Return non-nil if number BOUND is exclusive."
+  (and (consp bound) (numberp (car bound))))
+
+(defsubst typespec-eval-numeric-number-range-bound (bound)
+  "Normalize number range BOUND to a number or `*`."
+  (cond
+   ((eq bound '*) '*)
+   ((numberp bound) bound)
+   ((and (consp bound) (numberp (car bound))) (car bound))
+   (t nil)))
+
 (defsubst typespec-eval-numeric-float-bound (value exclusive)
   "Return a float bound for VALUE with EXCLUSIVE."
   (if (eq value '*) '*
@@ -162,6 +182,39 @@
     (typespec-eval--float-range '* '*))
    (t nil)))
 
+;;; Number/real range construction
+
+(defun typespec-eval-numeric-number-range-from (form)
+  "Return a `(number LOW HIGH)` or `(real LOW HIGH)` range for FORM, or nil."
+  (cond
+   ((typespec-eval--number-range-p form)
+    (let ((low (typespec-eval-numeric-number-range-bound (cadr form)))
+          (high (typespec-eval-numeric-number-range-bound (caddr form))))
+      (when (and low high)
+        (list 'number low high))))
+   ((typespec-eval--real-range-p form)
+    (let ((low (typespec-eval-numeric-number-range-bound (cadr form)))
+          (high (typespec-eval-numeric-number-range-bound (caddr form))))
+      (when (and low high)
+        (list 'real low high))))
+   ((memq form '(number real))
+    (list form '* '*))
+   ((typespec-eval--integer-range-p form)
+    (let ((low (typespec-eval-numeric-number-range-bound (cadr form)))
+          (high (typespec-eval-numeric-number-range-bound (caddr form))))
+      (when (and low high)
+        (list 'number low high))))
+   ((typespec-eval--float-range-p form)
+    (let ((low (typespec-eval-numeric-number-range-bound (cadr form)))
+          (high (typespec-eval-numeric-number-range-bound (caddr form))))
+      (when (and low high)
+        (list 'number low high))))
+   ((typespec-eval--const-p form)
+    (let ((val (typespec-eval--const-value form)))
+      (when (numberp val)
+        (list 'number val val))))
+   (t nil)))
+
 ;;; Unified numeric range info
 
 (defun typespec-eval-numeric-numeric-range-info (form)
@@ -181,6 +234,16 @@ The plist contains :type (integer or float), :low, :high, :low-excl, :high-excl.
            (low-excl (typespec-eval-numeric-float-bound-exclusive-p low))
            (high-excl (typespec-eval-numeric-float-bound-exclusive-p high)))
       (list :type 'float :low lowv :high highv :low-excl low-excl :high-excl high-excl)))
+   ((or (typespec-eval--number-range-p form)
+        (typespec-eval--real-range-p form))
+    (let* ((low (cadr form))
+           (high (caddr form))
+           (lowv (typespec-eval-numeric-number-bound-value low))
+           (highv (typespec-eval-numeric-number-bound-value high))
+           (low-excl (typespec-eval-numeric-number-bound-exclusive-p low))
+           (high-excl (typespec-eval-numeric-number-bound-exclusive-p high)))
+      (list :type (if (eq (car form) 'real) 'real 'number)
+            :low lowv :high highv :low-excl low-excl :high-excl high-excl)))
    (t
     (let ((irange (typespec-eval-numeric-integer-range-from form)))
       (if irange
@@ -222,7 +285,18 @@ Alias types are normalized to canonical range forms."
                (not low-excl) (not high-excl))
           'fixnum)
          (t
-          (typespec-eval--integer-range (or lo '*) (or hi '*))))))
+         (typespec-eval--integer-range (or lo '*) (or hi '*))))))
+     ;; Number/real range
+     ((memq type '(number real))
+      (let ((lo (cond ((null low) '*)
+                      (low-excl (list low))
+                      (t low)))
+            (hi (cond ((null high) '*)
+                      (high-excl (list high))
+                      (t high))))
+        (if (eq type 'real)
+            (typespec-eval--real-range lo hi)
+          (typespec-eval--number-range lo hi))))
      ;; Float range - ensure float values
      (t
       (let ((lo (cond ((null low) '*)
@@ -372,16 +446,24 @@ boundary value changes."
         (low-excl (plist-get info :low-excl))
         (high-excl (plist-get info :high-excl))
         (opts nil))
+    (when (memq type '(number real))
+      (setq type 'number))
     ;; Check if range can be negative
     (when (or (null low) (< low 0))
-      (push (if (eq type 'float) -1.0 -1) opts))
+      (if (eq type 'number)
+          (setq opts (append opts '(-1 -1.0)))
+        (push (if (eq type 'float) -1.0 -1) opts)))
     ;; Check if range includes zero
     (when (and (or (null low) (< low 0) (and (= low 0) (not low-excl)))
                (or (null high) (> high 0) (and (= high 0) (not high-excl))))
-      (push (if (eq type 'float) 0.0 0) opts))
+      (if (eq type 'number)
+          (setq opts (append opts '(0 0.0)))
+        (push (if (eq type 'float) 0.0 0) opts)))
     ;; Check if range can be positive
     (when (or (null high) (> high 0))
-      (push (if (eq type 'float) 1.0 1) opts))
+      (if (eq type 'number)
+          (setq opts (append opts '(1 1.0)))
+        (push (if (eq type 'float) 1.0 1) opts)))
     (when opts
       (typespec-eval-simplify-or
        (mapcar #'typespec-eval--make-const (nreverse opts))))))
@@ -607,6 +689,68 @@ Returns a new info plist for shift operations, or a result form for signum/abs."
                     (maxv (apply #'max candidates)))
                (typespec-eval--float-range minv maxv))))))
       (_ nil))))
+
+(defun typespec-eval-numeric-number-range-combine (lhs rhs op)
+  "Combine number ranges LHS and RHS using OP, returning a range or nil."
+  (let* ((low1 (cadr lhs))
+         (high1 (caddr lhs))
+         (low2 (cadr rhs))
+         (high2 (caddr rhs))
+         (kind (if (or (eq (car lhs) 'number) (eq (car rhs) 'number))
+                   'number
+                 'real)))
+    (pcase op
+      (`+
+       (if (or (eq low1 '*) (eq low2 '*) (eq high1 '*) (eq high2 '*))
+           (list kind
+                 (if (or (eq low1 '*) (eq low2 '*)) '* (+ low1 low2))
+                 (if (or (eq high1 '*) (eq high2 '*)) '* (+ high1 high2)))
+         (list kind (+ low1 low2) (+ high1 high2))))
+      (`-
+       (if (or (eq low1 '*) (eq low2 '*) (eq high1 '*) (eq high2 '*))
+           (list kind
+                 (if (or (eq low1 '*) (eq high2 '*)) '* (- low1 high2))
+                 (if (or (eq high1 '*) (eq low2 '*)) '* (- high1 low2)))
+         (list kind (- low1 high2) (- high1 low2))))
+      (`*
+       (if (or (eq low1 '*) (eq low2 '*) (eq high1 '*) (eq high2 '*))
+           (list kind '* '*)
+         (let* ((candidates (list (* low1 low2) (* low1 high2)
+                                  (* high1 low2) (* high1 high2)))
+                (minv (apply #'min candidates))
+                (maxv (apply #'max candidates)))
+           (list kind minv maxv))))
+      (`/
+       (if (or (eq low1 '*) (eq low2 '*) (eq high1 '*) (eq high2 '*))
+           nil
+         (let ((zero-in-range (and (<= (min low2 high2) 0.0)
+                                   (<= 0.0 (max low2 high2)))))
+           (unless zero-in-range
+             (let* ((candidates (list (/ low1 low2) (/ low1 high2)
+                                      (/ high1 low2) (/ high1 high2)))
+                    (minv (apply #'min candidates))
+                    (maxv (apply #'max candidates)))
+               (list kind minv maxv))))))
+      (_ nil))))
+
+(defun typespec-eval-numeric-number-range-arith (args op)
+  "Try to compute a number/real range for ARGS using OP."
+  (when (seq-some (lambda (arg)
+                    (or (typespec-eval--number-range-p arg)
+                        (typespec-eval--real-range-p arg)
+                        (memq arg '(number real))))
+                  args)
+    (let ((ranges (mapcar #'typespec-eval-numeric-number-range-from args)))
+      (when (seq-every-p #'identity ranges)
+        (let ((result (car ranges)))
+          (dolist (range (cdr ranges))
+            (setq result (typespec-eval-numeric-number-range-combine result range op)))
+          (if (and (consp result)
+                   (memq (car result) '(number real))
+                   (eq (cadr result) '*)
+                   (eq (caddr result) '*))
+              (car result)
+            result))))))
 
 (defun typespec-eval-numeric-float-range-arith (args op)
   "Try to compute a float range for ARGS using OP."

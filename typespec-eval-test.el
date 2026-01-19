@@ -268,6 +268,19 @@
   (should (equal (typespec-eval '(+ (float 1 2) (float 1 2)))
                  '(float 2.0 4.0))))
 
+(ert-deftest typespec-eval-arithmetic-number-real-ranges ()
+  "Test arithmetic over number/real ranges."
+  (should (equal (typespec-eval '(+ (number 0 1) (number 1 2)))
+                 '(number 1 3)))
+  (should (equal (typespec-eval '(- (number 0 1) (number 1 2)))
+                 '(number -2 0)))
+  (should (equal (typespec-eval '(* (number 0 2) (number 3 4)))
+                 '(number 0 8)))
+  (should (equal (typespec-eval '(/ (number 2 4) (number 1 2)))
+                 '(number 1 4)))
+  (should (equal (typespec-eval '(+ (real 0 1) (real 1 2)))
+                 '(real 1 3))))
+
 (ert-deftest typespec-eval-bit-ops ()
   (should (equal (typespec-eval '(logand 7 3))
                  '(const 3)))
@@ -1165,6 +1178,10 @@
                  'boolean))
   (should (equal (typespec-eval '(< integer integer))
                  'boolean))
+  (should (equal (typespec-eval '(< (number 0 1) (number 2 3)))
+                 '(const t)))
+  (should (equal (typespec-eval '(>= (real 2 3) (real 0 1)))
+                 '(const t)))
   (should (equal (typespec-eval '(> number number))
                  'boolean)))
 
