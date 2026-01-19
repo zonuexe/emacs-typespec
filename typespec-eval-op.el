@@ -789,6 +789,14 @@ TYPE-PRED is an optional predicate to check evaluated types."
   (let ((lhs (typespec-eval--eval lhs))
         (rhs (typespec-eval--eval rhs)))
     (cond
+     ((and (null value-pred)
+           (symbolp lhs)
+           (symbolp rhs)
+           (typespec-eval-types-type-category-with-guard lhs)
+           (typespec-eval-types-type-category-with-guard rhs)
+           (not (typespec-eval-types-type-subtype-p lhs rhs))
+           (not (typespec-eval-types-type-subtype-p rhs lhs)))
+      (typespec-eval--make-const nil))
      ;; nil checks (only for generic equality, not type-restricted)
      ((and (null value-pred)
            (typespec-eval--always-nil-p lhs)
@@ -1508,8 +1516,8 @@ When N is 1, behaves like `cdr`."
       (typespec-eval--make-const
        (funcall pred (typespec-eval--const-value lhs)
                 (typespec-eval--const-value rhs))))
-     ((and (typespec-eval-types-number-type-p lhs)
-           (typespec-eval-types-number-type-p rhs))
+     ((and (typespec-eval-types-number-or-marker-type-p lhs)
+           (typespec-eval-types-number-or-marker-type-p rhs))
       (let* ((lhs-info (typespec-eval-numeric-numeric-range-info lhs))
              (rhs-info (typespec-eval-numeric-numeric-range-info rhs))
              (result (and lhs-info rhs-info

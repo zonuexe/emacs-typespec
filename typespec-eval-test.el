@@ -32,6 +32,8 @@
                  '(const t)))
   (should (equal (typespec-eval '(eq (const 1) (const 2)))
                  '(const nil)))
+  (should (equal (typespec-eval '(eq integer marker))
+                 '(const nil)))
   (should (equal (typespec-eval '(eq number number)) 'boolean))
   (should (equal (typespec-eval '(eq unknown unknown)) 'boolean)))
 
@@ -44,6 +46,8 @@
                  '(const nil)))
   (should (equal (typespec-eval '(eql (const "a") (const "a")))
                  '(const nil)))   ; strings are not eql unless eq
+  (should (equal (typespec-eval '(eql integer marker))
+                 '(const nil)))
   (should (equal (typespec-eval '(eql number number)) 'boolean))
   (should (equal (typespec-eval '(eql unknown unknown)) 'boolean)))
 
@@ -102,52 +106,39 @@
                   '(:foo "a" :bar "b"))
                  '(:cause-error (wrong-type-argument (:plist-of (:foo string)) :bar)))))
 
-(defcustom typespec-eval-test--elisp-type-hierarchy-types-alist
-  '((boolean null)
-    (integer fixnum bignum)
-    (accessor oclosure-accessor)
-    (cl--class cl-structure-class oclosure--class built-in-class)
-    (vector timer)
-    (cons ppss decoded-time)
-    (number integer float)
-    (integer-or-marker integer marker)
-    (number-or-marker number integer-or-marker)
-    (array vector string bool-vector char-table)
-    (oclosure
-     accessor advice cconv--interactive-helper advice--forward
-     save-some-buffers-function cl--generic-nnm)
-    (cl-structure-object
-     cl--class xref-elisp-location org-cite-processor
-     cl--generic-method cl--random-state register-preview-info
-     cl--generic cl-slot-descriptor uniquify-item registerv
-     isearch--state cl--generic-generalizer lisp-indent-state)
-    (record cl-structure-object)
-    (symbol boolean symbol-with-pos)
-    (subr primitive-function subr-native-elisp special-form)
-    (compiled-function primitive-function subr-native-elisp byte-code-function)
-    (function oclosure compiled-function interpreted-function)
-    (module-function)
-    (list null cons)
-    (sequence array list)
-    (atom
-     number-or-marker array record symbol subr function mutex
-     font-spec frame tree-sitter-compiled-query
-     tree-sitter-node font-entity finalizer tree-sitter-parser
-     hash-table window-configuration user-ptr overlay process
-     font-object obarray condvar buffer terminal thread window
-     native-comp-unit)
-    (t sequence atom))
-  "Types listed in `elisp_type_hierarchy.txt'.")
-
 (ert-deftest typespec-eval-elisp-type-hierarchy ()
   (let ((types
          (delete-dups
-          (cl-loop for entry in typespec-eval-test--elisp-type-hierarchy-types-alist
+          (cl-loop for entry in typespec-eval-types--elisp-type-hierarchy-alist
                    append entry))))
     (dolist (type types)
       (let ((result (typespec-eval type)))
         (should (not (eq result 'unknown)))
         (should (not (and (consp result) (eq (car result) 'unresolved))))))))
+
+(ert-deftest typespec-eval-call-elisp-type-hierarchy ()
+  (dolist (entry typespec-eval-types--elisp-type-hierarchy-alist)
+    (let ((parent (car entry))
+          (children (cdr entry)))
+      (dolist (child children)
+        (should (equal (typespec-eval-call `(function (,parent) (const t))
+                                           (list child))
+                       '(const t)))))))
+
+(ert-deftest typespec-eval-call-elisp-type-hierarchy-mismatch ()
+  (dolist (pair '((oclosure array)
+                  (integer string)
+                  (string integer)
+                  (symbol vector)
+                  (vector list)
+                  (hash-table list)
+                  (process window)
+                  (buffer symbol)))
+    (let ((parent (car pair))
+          (child (cadr pair)))
+      (should (equal (typespec-eval-call `(function (,parent) (const t))
+                                         (list child))
+                     `(:cause-error (wrong-type-argument ,parent ,child)))))))
 
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))
@@ -160,6 +151,8 @@
                  '(const t)))
   (should (equal (typespec-eval '(= (integer 1 2) (integer 3 4)))
                  '(const nil)))
+  (should (equal (typespec-eval '(= integer marker))
+                 'boolean))
   (should (equal (typespec-eval '(= integer integer)) 'boolean))
   (should (equal (typespec-eval '(= float float)) 'boolean))
   (should (equal (typespec-eval '(= number number)) 'boolean))
@@ -337,6 +330,10 @@
                  'unknown))
   (should (equal (typespec-eval '(% integer (const 0)))
                  'never))
+  (should (equal (typespec-eval '(+ number-or-marker number-or-marker))
+                 'number))
+  (should (equal (typespec-eval '(- integer-or-marker integer-or-marker))
+                 'integer))
   (should (equal (typespec-eval '(+ integer integer))
                  'integer))
   (should (equal (typespec-eval '(* float float))
@@ -1309,6 +1306,12 @@
   (should (equal (typespec-eval '(>= (real 2 3) (real 0 1)))
                  '(const t)))
   (should (equal (typespec-eval '(> number number))
+                 'boolean))
+  (should (equal (typespec-eval '(< integer-or-marker integer-or-marker))
+                 'boolean))
+  (should (equal (typespec-eval '(<= number-or-marker number-or-marker))
+                 'boolean))
+  (should (equal (typespec-eval '(> marker number-or-marker))
                  'boolean)))
 
 (ert-deftest typespec-eval-equal ()
@@ -1317,6 +1320,8 @@
   (should (equal (typespec-eval '(equal (const (1 2)) (const (1 2))))
                  '(const t)))
   (should (equal (typespec-eval '(equal (const 1) (const 2)))
+                 '(const nil)))
+  (should (equal (typespec-eval '(equal integer marker))
                  '(const nil)))
   (should (equal (typespec-eval '(equal string string))
                  'boolean)))

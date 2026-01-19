@@ -879,9 +879,9 @@ Return nil when options cannot be enumerated or exceed the limit."
 (defun typespec-eval-numeric-arith-type (args)
   "Return the result type for arithmetic on ARGS."
   (cond
-   ((seq-every-p #'typespec-eval-types-integer-type-p args) 'integer)
+   ((seq-every-p #'typespec-eval-types-integer-or-marker-type-p args) 'integer)
    ((seq-every-p #'typespec-eval-types-float-type-p args) 'float)
-   ((seq-every-p #'typespec-eval-types-number-type-p args) 'number)
+   ((seq-every-p #'typespec-eval-types-number-or-marker-type-p args) 'number)
    (t 'unknown)))
 
 (provide 'typespec-eval-numeric)

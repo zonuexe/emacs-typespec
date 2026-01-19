@@ -30,6 +30,7 @@
 ;;; Code:
 
 (require 'subr-x)
+(require 'seq)
 (require 'typespec-eval-core)
 
 ;;; Integer bound helpers
@@ -64,9 +65,10 @@ A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)
 
 (defsubst typespec-eval-types-integer-type-p (form)
   "Return non-nil if FORM is an integer-like type."
-  (or (memq form '(int integer fixnum bignum
+  (or (memq form '(int integer fixnum bignum integer-or-marker
                        positive-int non-negative-int
-                       negative-int non-positive-int))
+                       negative-int non-positive-int
+                       natnum wholenump))
       (typespec-eval--integer-range-p form)))
 
 (defsubst typespec-eval-types-float-type-p (form)
@@ -78,10 +80,12 @@ A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)
 (defsubst typespec-eval-types-number-type-p (form)
   "Return non-nil if FORM is a number-like type."
   (or (memq form '(number real integer float fixnum bignum
+                          integer-or-marker number-or-marker
                           positive-int non-negative-int
                           negative-int non-positive-int
                           positive-float negative-float
-                          non-positive-float non-negative-float))
+                          non-positive-float non-negative-float
+                          natnum wholenump))
       (typespec-eval--integer-range-p form)
       (typespec-eval--float-range-p form)
       (typespec-eval--number-range-p form)
