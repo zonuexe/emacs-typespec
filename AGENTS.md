@@ -372,6 +372,22 @@ The test suite (`typespec-eval-test.el`) covers:
 
 **Test Count:** 131 tests (as of latest implementation)
 
+### Makefile
+
+`make test` / `make check` runs: **clean** → **test** (from .el) → **compile** → **test** (from .elc).
+
+| Target | Description |
+|--------|-------------|
+| **test**, **check** | clean → test-core + test-eval → compile → test-core + test-eval |
+| **test-core** | ERT for `typespec-core-test.el` |
+| **test-eval** | ERT for `typespec-eval-test.el` |
+| **clean** | Remove all `*.elc` |
+| **compile** | Byte-compile `EL_SOURCES` (dependency order; excludes `*-test.el`) |
+
+**Variables:** `EMACS ?= emacs`, `LOAD_PATH ?= -L .` (override when needed, e.g. `make test EMACS=emacs-29`).
+
+**EL_SOURCES** (for `compile`): `typespec-core`, `typespec-resolver`, `typespec`, `typespec-elsa`, `typespec-eval-core`, `typespec-eval-types`, `typespec-eval-var`, `typespec-eval-simplify`, `typespec-eval-struct`, `typespec-eval-numeric`, `typespec-eval-op`, `typespec-eval`.
+
 ## Future Extensions
 
 ### Potential Improvements
@@ -468,5 +484,6 @@ These constructs are preserved in the output and should be handled by full type 
 - `type-level-evaluation.md` - Type-level evaluation semantics
 - `typespec-core.el` - Core type system definitions
 - `typespec-eval-test.el` - Test suite
+- `Makefile` - Test run (clean → test → compile → test), `clean`, `compile`
 
 **typespec-eval modules:** `typespec-eval.el`, `typespec-eval-core.el`, `typespec-eval-types.el`, `typespec-eval-struct.el`, `typespec-eval-simplify.el`, `typespec-eval-numeric.el`, `typespec-eval-op.el`, `typespec-eval-var.el`. See “Module Layout and Function Naming” for prefixes and roles.
