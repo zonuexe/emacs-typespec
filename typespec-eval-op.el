@@ -894,6 +894,34 @@ TYPE-PRED is an optional predicate to check evaluated types."
            (list (typespec-eval--eval then)
                  (typespec-eval--eval else))))))))
 
+(defun typespec-eval-op--string-affix-narrowing (affix var rest then position)
+  "Return a narrowing for string prefix/suffix predicates.
+
+AFFIX is the string argument, VAR is the subject variable, REST holds
+the optional IGNORE-CASE argument, THEN is the then-branch, and POSITION
+is either `prefix` or `suffix`."
+  (let ((affix (typespec-eval--eval affix))
+        (ignore-case (when rest (typespec-eval--eval (car rest)))))
+    (when (and (equal then var)
+               (typespec-eval--const-p affix)
+               (stringp (typespec-eval--const-value affix)))
+      (let ((ignore-nil-p (or (null ignore-case)
+                              (eq ignore-case nil)
+                              (typespec-eval--always-nil-p ignore-case)))
+            (ignore-non-nil-p (or (eq ignore-case t)
+                                  (typespec-eval--always-non-nil-p ignore-case))))
+        (cond
+         (ignore-nil-p
+          (if (eq position 'prefix)
+              (list 'rx 'bos (typespec-eval--const-value affix))
+            (list 'rx (typespec-eval--const-value affix) 'eos)))
+         ((and (> (length (typespec-eval--const-value affix)) 0)
+               ignore-non-nil-p)
+          (typespec-eval-simplify-or
+           (list
+            (typespec-eval-simplify-and (list var '(not (const ""))))
+            '(const nil)))))))))
+
 (defun typespec-eval-op-if-rx-narrowing (pred then else)
   "Return an `(rx ...)` type when PRED narrows THEN with ELSE nil.
 This matches `(if (string-match-p (rx ...) VAR) VAR nil)` patterns."
@@ -908,23 +936,9 @@ This matches `(if (string-match-p (rx ...) VAR) VAR nil)` patterns."
                   (typespec-eval-types-rx-type-p rx))
          rx))
       (`(string-prefix-p ,prefix ,var . ,rest)
-       (let ((prefix (typespec-eval--eval prefix))
-             (ignore-case (when rest (typespec-eval--eval (car rest)))))
-         (when (and (equal then var)
-                    (typespec-eval--const-p prefix)
-                    (stringp (typespec-eval--const-value prefix))
-                    (or (null ignore-case)
-                        (typespec-eval--always-nil-p ignore-case)))
-           (list 'rx 'bos (typespec-eval--const-value prefix)))))
+       (typespec-eval-op--string-affix-narrowing prefix var rest then 'prefix))
       (`(string-suffix-p ,suffix ,var . ,rest)
-       (let ((suffix (typespec-eval--eval suffix))
-             (ignore-case (when rest (typespec-eval--eval (car rest)))))
-         (when (and (equal then var)
-                    (typespec-eval--const-p suffix)
-                    (stringp (typespec-eval--const-value suffix))
-                    (or (null ignore-case)
-                        (typespec-eval--always-nil-p ignore-case)))
-           (list 'rx (typespec-eval--const-value suffix) 'eos))))
+       (typespec-eval-op--string-affix-narrowing suffix var rest then 'suffix))
       (`(string= ,lhs ,rhs)
        (let ((lhs (typespec-eval--eval lhs))
              (rhs (typespec-eval--eval rhs)))

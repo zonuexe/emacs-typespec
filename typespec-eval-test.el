@@ -1616,10 +1616,42 @@
    (equal
     (typespec-eval
      '(:forall ((a string))
+               (if (string-prefix-p "foo" a nil)
+                   a
+                 nil)))
+    '(rx bos "foo")))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-prefix-p "foo" a t)
+                   a
+                 nil)))
+    '(or (and a (not (const ""))) (const nil))))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
                (if (string-suffix-p "bar" a)
                    a
                  nil)))
     '(rx "bar" eos)))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-suffix-p "bar" a nil)
+                   a
+                 nil)))
+    '(rx "bar" eos)))
+  (should
+   (equal
+    (typespec-eval
+     '(:forall ((a string))
+               (if (string-suffix-p "bar" a t)
+                   a
+                 nil)))
+    '(or (and a (not (const ""))) (const nil))))
   (should
    (equal
     (typespec-eval
