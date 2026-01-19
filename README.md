@@ -66,6 +66,9 @@ Let's consider a more complex example.
 
 Add `(declare-with-typespec ...)` inside a function to emit an `ftype` declaration.
 
+**Note**: `declare-with-typespec` is a planned feature for generating `ftype`
+declarations from typespec annotations. It is not yet implemented.
+
 ``` elisp
 (typespec #'my-times2
   (:forall ((a number))

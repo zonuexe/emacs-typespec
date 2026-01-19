@@ -467,6 +467,38 @@ The system will automatically:
 - Extract guard return type from `typespec` property
 - Use base type for type checks
 
+### Type Hierarchy and Subtype Checking
+
+The evaluator implements subtype checking based on the Emacs Lisp type hierarchy
+(as defined in `elisp_type_hierarchy.txt`). The hierarchy is stored in
+`typespec-eval-types--elisp-type-hierarchy-alist` and used by
+`typespec-eval-types--elisp-subtype-p` to determine type compatibility.
+
+Key relationships:
+- `fixnum` <: `integer` <: `number`
+- `hook` <: `list` <: `sequence`
+- `integer-or-marker` <: `number-or-marker`
+- `boolean` includes `null` (nil)
+
+This enables type-level evaluation to correctly handle subtype relationships
+when checking function call compatibility and type inference.
+
+### Function Call Evaluation (`typespec-eval-call`)
+
+The `typespec-eval-call` function evaluates function application at the type
+level. It validates argument counts and types, performs type variable substitution
+for polymorphic functions, and returns either the result type or a `(:cause-error ...)`
+form on validation failure.
+
+Key features:
+- **Argument validation**: Checks argument count and type compatibility
+- **Type variable substitution**: Substitutes `:forall` type variables with actual
+  argument types
+- **Subtype checking**: Uses the Emacs Lisp type hierarchy to determine compatibility
+- **Error reporting**: Returns `(:cause-error INFO)` with detailed error information
+
+See `type-level-evaluation.md` for detailed documentation.
+
 ### Pass-through Type Constructs
 
 Some type constructs are passed through unchanged by the evaluator, as they require full type checking rather than type-level evaluation:

@@ -31,8 +31,14 @@ as introduced in Emacs 29.1. Concretely:
 The canonical Emacs type hierarchy is included in [`elisp_type_hierarchy.txt`][elisp_type_hierarchy]
 and should be treated as the ground truth for base type relationships.
 
+The typespec evaluator implements subtype checking based on this hierarchy.
+For example, `fixnum` is a subtype of `integer`, which is a subtype of `number`.
+Similarly, `hook` is a subtype of `list`, which is a subtype of `sequence`.
+This enables type-level evaluation to correctly handle subtype relationships
+when checking function call compatibility and type inference.
+
 We do not attempt to enumerate the full set of `ftype`-annotated functions in
-this document; instead, we treat the Emacs native compiler’s accepted type
+this document; instead, we treat the Emacs native compiler's accepted type
 specifications as the compatibility baseline and add typespec-only extensions
 on top.
 
@@ -76,6 +82,7 @@ TYPE ::= symbol
        | (sequence TYPE)
        | (cons TYPE TYPE)
        | (hash-table TYPE TYPE)
+       | (hook FUNTYPE . REST)
        | (:tuple TYPE...)
        | (:tuple TYPE... . TYPE)
        | (:alist TYPE TYPE)
@@ -123,7 +130,8 @@ notation.
 
 `t`, `nil`, `null`, `never`, `atom`, `cons`, `list`, `vector`, `sequence`,
 `symbol`, `keyword`, `boolean`/`bool`, `integer`/`int`, `float`,
-`real`, `number`, `character`, `string`, `hash-table`, `function`
+`real`, `number`, `character`, `string`, `hash-table`, `function`,
+`marker`, `integer-or-marker`, `number-or-marker`, `hook`
 
 Common numeric shorthand (recommended):
 
@@ -134,6 +142,12 @@ Common numeric shorthand (recommended):
 - `positive-float` — `(float (0) *)`
 - `negative-float` — `(float * (0))`
 - `fixnum` — `(integer most-negative-fixnum most-positive-fixnum)`
+
+Composite types (Emacs Lisp built-in):
+- `marker` — buffer position marker
+- `integer-or-marker` — `(or integer marker)`
+- `number-or-marker` — `(or number marker)`
+- `hook` — `(hook (function () t))` (list of zero-arg functions)
 
 Range notation uses `*` for an unbounded side. For example,
 `(integer * 10)` means any integer <= 10, and `(integer 0 *)` means
@@ -793,6 +807,13 @@ compatible with typespec evaluation and should be ignored by type consumers.
 If a safe, deterministic mapping is proposed, support for `:complete` may be
 added as an optional extension.
 
+### Hook Types
+
+`hook` is a special list type that represents a list of functions (typically
+used for Emacs hooks). The canonical form is `(hook FUNTYPE . REST)` where
+`FUNTYPE` specifies the function signature and `REST` may contain additional
+metadata such as `:options`.
+
 For defcustom `hook` types, interpret them as a hook type with explicit
 arity. The default is a normal hook (zero-arg functions):
 `hook` ⇒ `(hook (function () t))`.
@@ -806,6 +827,10 @@ changing the core type:
 
 The `:options` list is treated as UI metadata; it does not change the
 callability rules.
+
+Note: `hook` is a subtype of `list` in the Emacs type hierarchy, so it can
+be used wherever a list is expected, but it carries additional semantic
+meaning for hook-specific operations.
 
 ## Polymorphism / Type Variables
 

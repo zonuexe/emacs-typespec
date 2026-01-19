@@ -90,6 +90,62 @@ inside `if` predicates):
 `process-live-p` is state-dependent, so it is not allowed in `if` predicates,
 but it is fine inside `:assert` because the check happens at runtime.
 
+## Function Call Evaluation (`typespec-eval-call`)
+
+The `typespec-eval-call` function evaluates function application at the type
+level. It takes a function type specification and a list of argument types,
+and returns either the result type or a `(:cause-error ...)` form.
+
+### Argument Validation
+
+`typespec-eval-call` validates:
+- **Argument count**: Checks that the number of arguments matches the function's
+  required and optional parameters.
+- **Argument types**: Validates that each argument type is compatible with the
+  corresponding parameter type using subtype checking.
+- **Keyword arguments**: For `&keys` parameters, validates that keyword-value
+  pairs match the expected plist structure, with optional `&allow-other-keys`
+  support.
+
+### Type Variable Substitution
+
+When the function type includes `:forall` (polymorphic types), `typespec-eval-call`
+substitutes type variables with the actual argument types. For example:
+
+```emacs-lisp
+(typespec-eval-call '(:forall (a) (function (a) a)) '("foo"))
+;; => (const "foo")
+```
+
+The type variable `a` is substituted with the argument type `(const "foo")`,
+and the return type becomes `(const "foo")`.
+
+### Error Reporting
+
+When validation fails, `typespec-eval-call` returns `(:cause-error INFO)` where
+`INFO` is a list describing the error:
+
+- `(wrong-number-of-arguments N)` - Too few or too many arguments
+- `(wrong-type-argument EXPECTED ACTUAL)` - Type mismatch
+
+Example:
+
+```emacs-lisp
+(typespec-eval-call '(function (number) (const t)) '("foo"))
+;; => (:cause-error (wrong-type-argument number "foo"))
+```
+
+### Subtype Checking
+
+`typespec-eval-call` uses the Emacs Lisp type hierarchy (as defined in
+`elisp_type_hierarchy.txt`) to determine type compatibility. For example,
+`fixnum` is compatible with `integer`, which is compatible with `number`:
+
+```emacs-lisp
+(typespec-eval-call '(function (number) (const t)) '(fixnum))
+;; => (const t)
+```
+
 ## Downcast and Benevolent
 
 ### `downcast`
