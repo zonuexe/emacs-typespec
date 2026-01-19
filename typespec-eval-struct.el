@@ -45,6 +45,11 @@
   (when (and (consp form) (memq (car form) '(list list+)))
     (cadr form)))
 
+(defsubst typespec-eval-struct-sequence-elem-type (form)
+  "Return element type if FORM is a sequence type."
+  (when (and (consp form) (eq (car form) 'sequence))
+    (cadr form)))
+
 ;;; Alist
 
 (defsubst typespec-eval-struct-alist-form-p (value)
