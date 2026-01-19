@@ -793,6 +793,20 @@ compatible with typespec evaluation and should be ignored by type consumers.
 If a safe, deterministic mapping is proposed, support for `:complete` may be
 added as an optional extension.
 
+For defcustom `hook` types, interpret them as a hook type with explicit
+arity. The default is a normal hook (zero-arg functions):
+`hook` ⇒ `(hook (function () t))`.
+
+If `:options` is present, it may be recorded as a value constraint without
+changing the core type:
+
+```emacs-lisp
+(hook (function () t) :options (member foo bar))
+```
+
+The `:options` list is treated as UI metadata; it does not change the
+callability rules.
+
 ## Polymorphism / Type Variables
 
 To express OCaml-style polymorphism:

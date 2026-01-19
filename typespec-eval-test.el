@@ -1846,6 +1846,10 @@
                  'never))
   (should (equal (typespec-eval '(downcast unknown integer))
                  'integer))
+  (should (equal (typespec-eval '(downcast hook (list function)))
+                 '(list function)))
+  (should (equal (typespec-eval '(downcast (list function) hook))
+                 '(hook (function () t))))
   (should (equal (typespec-eval '(benevolent positive-int))
                  '(benevolent positive-int)))
   (should (equal (typespec-eval '(value-of (:tuple integer string)))
@@ -1954,7 +1958,7 @@
   (should (equal (typespec-eval-var--custom-type-to-typespec 'function)
                  'function))
   (should (equal (typespec-eval-var--custom-type-to-typespec 'hook)
-                 '(list function)))
+                 '(hook (function () t))))
   (should (equal (typespec-eval-var--custom-type-to-typespec '(const 42))
                  '(const 42)))
   (should (equal (typespec-eval-var--custom-type-to-typespec '(const :args (foo)))
@@ -2060,6 +2064,26 @@
                                  (number :tag "Landscape Line Spacing")
                                  (number :tag "Portrait Line Spacing"))))
                  '(or number (cons number number)))))
+
+(ert-deftest typespec-eval-custom-variable-types ()
+  "Ensure custom variable types convert without errors."
+  (require 'cus-edit)
+  (require 'ecomplete)
+  (require 'files)
+  (require 'reftex-vars)
+  (let (failures)
+    (mapatoms
+     (lambda (sym)
+       (when (custom-variable-p sym)
+         (let ((custom-type (condition-case err
+                                (custom-variable-type sym)
+                              (error err))))
+           (condition-case err
+               (when custom-type
+                 (typespec-eval-var--custom-type-to-typespec custom-type))
+             (error (push (list sym custom-type err) failures))))))
+     obarray)
+    (should (equal failures nil))))
 
 (ert-deftest typespec-eval-integerp-variants ()
   "Test integerp with various integer type variants."

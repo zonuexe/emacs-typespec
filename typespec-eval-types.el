@@ -97,6 +97,32 @@ A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)
       (and (typespec-eval--const-p form)
            (numberp (typespec-eval--const-value form)))))
 
+(defsubst typespec-eval-types-number-or-marker-type-p (form)
+  "Return non-nil if FORM is a number-or-marker-like type."
+  (or (typespec-eval-types-number-type-p form)
+      (typespec-eval-types-marker-type-p form)
+      (and (consp form)
+           (eq (car form) 'or)
+           (seq-every-p #'typespec-eval-types-number-or-marker-type-p (cdr form)))))
+
+(defsubst typespec-eval-types-integer-or-marker-type-p (form)
+  "Return non-nil if FORM is an integer-or-marker-like type."
+  (or (typespec-eval-types-integer-type-p form)
+      (typespec-eval-types-marker-type-p form)
+      (and (consp form)
+           (eq (car form) 'or)
+           (seq-every-p #'typespec-eval-types-integer-or-marker-type-p (cdr form)))))
+
+(defconst typespec-eval-types--composite-aliases
+  '((integer-or-marker . (or integer marker))
+    (number-or-marker . (or number marker))
+    (hook . (hook (function () t))))
+  "Alist mapping composite alias types to canonical typespec forms.")
+
+(defsubst typespec-eval-types-normalize (form)
+  "Return normalized FORM when it is a composite alias type."
+  (or (cdr (assq form typespec-eval-types--composite-aliases)) form))
+
 (defsubst typespec-eval-types-integer-or-const-p (form)
   "Return non-nil if FORM is an integer type or integer const."
   (or (typespec-eval-types-integer-type-p form)
@@ -118,9 +144,15 @@ A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)
            (let ((low (cadr form)))
              (and (numberp low) (<= 0 low))))))
 
+(defsubst typespec-eval-types-hook-type-p (form)
+  "Return non-nil if FORM is a hook type."
+  (or (eq form 'hook)
+      (and (consp form) (eq (car form) 'hook))))
+
 (defsubst typespec-eval-types-list-type-p (form)
   "Return non-nil if FORM is a list type."
   (or (eq form 'list)
+      (typespec-eval-types-hook-type-p form)
       (and (consp form) (memq (car form) '(list list+)))))
 
 (defsubst typespec-eval-types-vector-type-p (form)
@@ -186,11 +218,60 @@ A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)
 
 ;;; Type category system
 
+(defconst typespec-eval-types--elisp-type-hierarchy-alist
+  '((boolean null)
+    (integer fixnum bignum)
+    (accessor oclosure-accessor)
+    (cl--class cl-structure-class oclosure--class built-in-class)
+    (vector timer)
+    (cons ppss decoded-time)
+    (number integer float)
+    (integer-or-marker integer marker)
+    (number-or-marker number integer-or-marker)
+    (array vector string bool-vector char-table)
+    (oclosure
+     accessor advice cconv--interactive-helper advice--forward
+     save-some-buffers-function cl--generic-nnm)
+    (cl-structure-object
+     cl--class xref-elisp-location org-cite-processor
+     cl--generic-method cl--random-state register-preview-info
+     cl--generic cl-slot-descriptor uniquify-item registerv
+     isearch--state cl--generic-generalizer lisp-indent-state)
+    (record cl-structure-object)
+    (symbol boolean symbol-with-pos)
+    (subr primitive-function subr-native-elisp special-form)
+    (compiled-function primitive-function subr-native-elisp byte-code-function)
+    (function oclosure compiled-function interpreted-function)
+    (module-function)
+    (list null cons)
+    (sequence array list)
+    (atom
+     number-or-marker array record symbol subr function mutex
+     font-spec frame tree-sitter-compiled-query
+     tree-sitter-node font-entity finalizer tree-sitter-parser
+     hash-table window-configuration user-ptr overlay process
+     font-object obarray condvar buffer terminal thread window
+     native-comp-unit)
+    (t sequence atom))
+  "Elisp type hierarchy for subtype checks.")
+
+(defun typespec-eval-types--elisp-subtype-p (sub super)
+  "Return non-nil if SUB is a subtype of SUPER in the elisp hierarchy."
+  (cond
+   ((eq sub super) t)
+   (t
+    (let ((children (cdr (assq super typespec-eval-types--elisp-type-hierarchy-alist))))
+      (and children
+           (seq-some (lambda (child)
+                       (typespec-eval-types--elisp-subtype-p sub child))
+                     children))))))
+
 (defun typespec-eval-types-type-category (form)
   "Return the type category of FORM as a symbol, or nil if unknown.
 This function classifies types into categories for efficient comparison.
 Note: `number' type returns \\='number, not \\='integer or \\='float."
   (cond
+   ((eq form 'null) 'null)
    ((typespec-eval-types-string-type-p form) 'string)
    ((typespec-eval-types-integer-type-p form) 'integer)
    ((typespec-eval-types-float-type-p form) 'float)
@@ -199,6 +280,7 @@ Note: `number' type returns \\='number, not \\='integer or \\='float."
         (typespec-eval--number-range-p form)
         (typespec-eval--real-range-p form))
     'number)
+   ((typespec-eval-types-hook-type-p form) 'hook)
    ((typespec-eval-types-list-type-p form) 'list)
    ((typespec-eval-types-vector-type-p form) 'vector)
    ((typespec-eval-types-symbol-type-p form) 'symbol)
@@ -219,17 +301,22 @@ Note: `number' type returns \\='number, not \\='integer or \\='float."
   (let ((subcat (typespec-eval-types-type-category-with-guard sub))
         (supercat (typespec-eval-types-type-category-with-guard super)))
     (cond
+     ((and (symbolp sub) (symbolp super)
+           (typespec-eval-types--elisp-subtype-p sub super))
+      t)
      ((or (null subcat) (null supercat)) nil)
      ((eq subcat supercat) t)
+     ((and (eq supercat 'boolean) (eq subcat 'null)) t)
      ((and (eq supercat 'number)
            (memq subcat '(integer float number)))
       t)
      ((and (eq supercat 'sequence)
-           (memq subcat '(list vector string bool-vector char-table)))
+           (memq subcat '(hook list vector string bool-vector char-table)))
       t)
      ((and (eq supercat 'array)
            (memq subcat '(string vector bool-vector char-table)))
       t)
+     ((and (eq supercat 'list) (eq subcat 'hook)) t)
      (t nil))))
 
 ;;; Guard type resolution

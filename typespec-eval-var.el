@@ -63,7 +63,7 @@
     ('natnum '(integer 0 *))
     ('float 'float)
     ('function 'function)
-    ('hook '(list function))
+    ('hook '(hook (function () t)))
     (_ sym)))
 
 (defconst typespec-eval-var--custom-keywords
@@ -140,11 +140,28 @@
                                     completions)))
       fallback)))
 
+(defun typespec-eval-var--custom-hook-options (form)
+  "Return a `:options (member ...)` clause for FORM or nil."
+  (let ((options (typespec-eval-var--custom-kw form :options nil))
+        (items nil))
+    (when (and (listp options) options)
+      (dolist (item options)
+        (pcase item
+          ((pred symbolp) (push item items))
+          (`(,sym . ,_) (when (symbolp sym) (push sym items)))))
+      (when items
+        (list :options (cons 'member (nreverse items)))))))
+
 (defun typespec-eval-var--custom-type-to-typespec (form)
   "Convert custom type FORM into a typespec form."
   (pcase form
     ((pred symbolp)
      (typespec-eval-var--custom-type-symbol form))
+    (`(hook . ,_)
+     (let ((opts (typespec-eval-var--custom-hook-options form)))
+       (if opts
+           (append '(hook (function () t)) opts)
+         '(hook (function () t)))))
     (`(string . ,_)
      (typespec-eval-var--custom-completions-to-typespec form 'string))
     (`(symbol . ,_)
