@@ -26,6 +26,7 @@
 
 (require 'seq)
 (require 'typespec-eval-core)
+(require 'typespec-builtins)
 
 (defun typespec-eval-var--symbol (sym)
   "Return the symbol referenced by SYM, or nil."

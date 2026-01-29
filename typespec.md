@@ -68,8 +68,8 @@ TYPE ::= symbol
        | (not TYPE)
        | (diff TYPE TYPE)
        | (function ARGS TYPE)
-       | (function ARGS (:guard TYPE))
-       | (function ARGS (:guard! TYPE))
+       | (function ARGS (:guard TYPE [RET]))
+       | (function ARGS (:guard! TYPE [RET]))
        | (function ARGS (:assert TYPE))
        | (if PRED TYPE TYPE)
        | (integer LOW HIGH)
@@ -213,6 +213,28 @@ Example usage:
 ;; `mixed` for dynamic values you intentionally pass through unchecked.
 (typespec #'eval (function (mixed) mixed))
 ```
+
+### Type Guards
+
+`(:guard TYPE [RET])` and `(:guard! TYPE [RET])` allow an optional
+**return type on the true branch**. If RET is omitted, the return type
+defaults to `boolean`.
+
+```emacs-lisp
+;; True branch: ARG is string, return value is the same string.
+(function (unknown) (:guard string string))
+
+;; Total predicate: true branch returns symbol, false branch returns nil,
+;; argument is refined to symbol / (not symbol).
+(function (symbol) (:guard! t symbol))
+
+;; True branch returns the *bound value* (unknown type), while the
+;; argument is known to be a bound, non-nil symbol.
+(function (symbol) (:guard t unknown))  ; e.g. bound-and-true-p
+```
+
+For `:guard!`, the false branch refines the argument to `(not TYPE)` and
+the return is `nil` (or `boolean` if RET is omitted).
 
 ### Void
 

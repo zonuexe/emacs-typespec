@@ -67,6 +67,34 @@ The return value is also treated as that same refined type.
 In other words, `:assert` is shorthand for “this function returns the
 checked value and refines it on success.”
 
+### Optional result type for `:guard` / `:guard!`
+
+Some predicates return a useful non-boolean value on the true branch
+(`bound-and-true-p`-style helpers). You can express that with an
+optional second component:
+
+```emacs-lisp
+(function (unknown) (:guard string STRING))
+(function (unknown) (:guard! string STRING))
+```
+
+- The first slot (`string` above) is the refinement target for the
+  *argument*.
+- The optional second slot (`STRING` above) is the *returned* value type
+  on the true branch. If omitted, it defaults to `boolean`.
+- For `:guard!`, the false branch refines the argument to `(not string)`
+  and the return is `nil` (or `boolean` if no return slot is given).
+
+Example (true-branch returns the *bound value* of the symbol; the
+argument itself is still the symbol):
+
+```emacs-lisp
+(typespec #'bound-and-true-p
+  ;; bound-and-true-p returns the variable's value (unknown type here),
+  ;; while refining that the symbol is non-nil and bound.
+  (function (symbol) (:guard t unknown)))
+```
+
 ## `:cause-error` (diagnostic pseudo-type)
 
 Type-level evaluation can return `(:cause-error INFO)` when a call is

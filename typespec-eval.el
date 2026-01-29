@@ -71,6 +71,12 @@
      (typespec-eval-op-generalize value target))
     (`(generalize-signed ,value)
      (typespec-eval-op-generalize-signed value))
+    (`(:guard ,type)
+     (list :guard (typespec-eval--eval type)))
+    (`(:guard! ,type)
+     (list :guard! (typespec-eval--eval type)))
+    (`(:assert ,type)
+     (list :assert (typespec-eval--eval type)))
     (`(downcast ,value ,target)
      (typespec-eval-op-downcast value target))
     (`(benevolent ,value)
@@ -641,9 +647,9 @@
   (let ((value (typespec-eval--eval value))
         (expected (typespec-eval--eval expected)))
     (cond
+     ((memq expected '(mixed unknown t)) t)
      ((and (symbolp value) (symbolp expected))
       (typespec-eval-types-type-subtype-p value expected))
-     ((memq expected '(mixed unknown t)) t)
      ((equal value expected) t)
      ((typespec-eval--const-p value)
       (let* ((val (typespec-eval--const-value value))
@@ -805,7 +811,11 @@ Return a typespec result or a `(:cause-error ...)' form."
                    (dolist (binding bindings)
                      (setq ret (typespec-eval-call--substitute
                                 ret (car binding) (cdr binding))))
-                   ret))))))
+                   (pcase ret
+                     (`(:guard ,_) 'boolean)
+                     (`(:guard! ,_) 'boolean)
+                     (`(:assert ,type) type)
+                     (_ ret))))))))
           (_ 'unknown))))))
 
 (provide 'typespec-eval)

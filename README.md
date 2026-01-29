@@ -64,10 +64,8 @@ Let's consider a more complex example.
     (function (a) (generalize-signed a))))
 ```
 
-Add `(declare-with-typespec ...)` inside a function to emit an `ftype` declaration.
-
-**Note**: `declare-with-typespec` is a planned feature for generating `ftype`
-declarations from typespec annotations. It is not yet implemented.
+Add `(declare (typespec-ftype ...))` inside a function to emit an `ftype`
+declaration derived from typespec annotations.
 
 ``` elisp
 (typespec #'my-times2
@@ -76,10 +74,14 @@ declarations from typespec annotations. It is not yet implemented.
 
 (defun my-times2 (n)
   "Return N multiplied by 2."
-  (declare-with-typespec my-times2)
+  (declare (typespec-ftype (function (number) number)))
   ;; (declare (ftype (function (number) number)))
   (+ n n))
 ```
+
+> [!WARNING]
+> `typespec-ftype` may become useful for compile-time optimization and
+> performance, but it is still experimental and not strongly recommended yet.
 
 ### Property-based checks
 
