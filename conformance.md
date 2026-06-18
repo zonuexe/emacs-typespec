@@ -150,22 +150,22 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 - `if`-PRED predicate whitelist enforcement and RETTYPE-position enforcement.
 - `(not T)` as a **type complement** (see below).
 
-## Evaluator behaviors not yet in the spec
+## Evaluator behaviors now documented
 
-These are implemented but undocumented; the spec should describe them.
+These were implemented before the spec described them, and are now written up:
 
-- **`(or (const t) (const nil))` ≡ `boolean`** normalization.
-- **`if`-rx narrowing**: `(if (string-match-p (rx …) VAR) VAR nil)` and the
-  `string-prefix-p`/`string-suffix-p`/`string=`/`string-match` variants
-  synthesize an `(rx …)` type for the THEN branch.
-- **`and`-side numeric/string/rx intersection arithmetic** (range intersection,
-  const-matches-rx), producing refined ranges or `never`.
-- **`numeric-range-to-form` collapses an exact-fixnum integer range to the
-  symbol `fixnum`** (the reverse of alias → range).
-- **Rich `defcustom :type` → typespec translation** (`cons`, `list`/`group` →
-  `:tuple`, `alist`/`plist`, `choice`/`radio` → `or`, `repeat`/`set` → `list`,
-  etc.).
-- **`&key` → `&keys` and `&allow-other-keys` normalization** at call sites.
+- **`(or (const t) (const nil))` ≡ `boolean`** — `typespec.md` § Normalization.
+- **`if`-rx narrowing** (`string-match-p`/`string-prefix-p`/`string-suffix-p`/
+  `string=` synthesize an `(rx …)` THEN type) —
+  `type-level-evaluation.md` § String-predicate narrowing.
+- **Intersection range arithmetic** and the **range → `fixnum` collapse** —
+  `typespec.md` § Normalization.
+- **Rich `defcustom :type` → typespec translation** — `typespec.md` § Variable
+  types.
+- **`&allow-other-keys`** (open `:plist-of`) — `typespec.md` § Keyed plists.
+
+Still undocumented: the **`&key` → `&keys`** argument-list alias normalization
+at call sites (a minor `cl-defun` convenience).
 
 ## The `not` overload
 

@@ -356,6 +356,22 @@ Explanation:
 - Otherwise the return type is treated as `:guard`, meaning it only refines on
   the true branch and does not imply the false branch complement.
 
+### String-predicate narrowing (`rx` synthesis)
+
+As a special case of conditional return types, when the predicate is a string
+test on the value that the THEN branch returns and the ELSE branch is `nil`,
+the THEN branch is narrowed to a synthesized `(rx ...)` string type. The
+reference evaluator recognizes:
+
+- `(if (string-match-p (rx R) VAR) VAR nil)` and `(string-match …)` ⇒ `(rx R)`.
+- `(if (string-prefix-p "P" VAR) VAR nil)` ⇒ `(rx bos "P")`
+  (and `string-suffix-p` ⇒ `(rx "S" eos)`); a non-nil ignore-case argument
+  weakens this to “a non-empty string”.
+- `(if (string= "S" VAR) VAR nil)` / `string-equal` ⇒ `(rx bos "S" eos)`.
+
+This lets a checker refine, for example, a value that has passed a prefix test
+into a more precise string subtype on the success branch.
+
 ## Numeric Range Evaluation
 
 Type-level evaluation uses a unified representation for numeric ranges to

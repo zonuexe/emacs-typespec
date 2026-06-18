@@ -568,6 +568,11 @@ constant whose equivalence is implementation-defined.
 - Adjacent or overlapping **integer** ranges in a union may be merged, e.g.
   `(or (integer 0 4) (integer 5 9))` ≡ `(integer 0 9)`. Float ranges are not
   merged this way.
+- The reverse of an alias expansion is also allowed: an integer range whose
+  bounds are exactly the fixnum limits may collapse back to `fixnum`, i.e.
+  `(integer most-negative-fixnum most-positive-fixnum)` ≡ `fixnum`.
+- Intersection refines numeric ranges: `(and (integer 0 10) (integer 5 20))` ≡
+  `(integer 5 10)`, and an empty intersection (disjoint ranges) ≡ `never`.
 
 ### Structural normalization
 
@@ -842,7 +847,10 @@ lexical or dynamically bound local variables.
 - For `defconst` values, the variable is treated as a constant; a list
   of symbols is treated as a tuple of `const` values.
 - For `defcustom` values, use the declared `:type` if present; this covers
-  values that can change at runtime or be dynamically bound.
+  values that can change at runtime or be dynamically bound. The customization
+  widgets map structurally: `cons` → `(cons ...)`, `list`/`group` → `:tuple`,
+  `alist`/`plist` → `:alist`/`:plist`, `choice`/`radio` → `or`, `repeat`/`set`
+  → `list`, and a bare type widget (`integer`, `string`, …) to that type.
 - Otherwise, the variable type is `unknown`.
 
 Example:
