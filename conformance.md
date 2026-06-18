@@ -98,7 +98,7 @@ Implemented in `typespec-eval.el` (`typespec-eval-call`) and
 | Optional second slot `(:guard T RET)` / `(:guard! T RET)` | ✅ — RET is the true-branch return type (defaults to `boolean`) |
 | `if` PRED restricted to the allowed predicate whitelist; disallowed ones rejected | ✗ — no validation (sound `(or …)` fallback, but nothing is rejected) |
 | `(if …)`/`:guard`/`:guard!`/`:assert` valid only in the RETTYPE slot | ✗ — accepted in any position |
-| `&args` / `&rest` as meta-position actual-argument tuples | ✗ — absent from the implementation |
+| `&args` / `&rest` as meta-position actual-argument tuples | ✅ — substituted with the actual-argument tuples at the call site |
 
 ## Structural and utility types
 
@@ -146,7 +146,6 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 
 - Argument-refinement effects of `:guard`/`:guard!`/`:assert` (checker-level).
 - `:guard!` false-branch complement (distinct behavior from `:guard`).
-- `&args` / `&rest` meta-position operands.
 - `if`-PRED predicate whitelist enforcement and RETTYPE-position enforcement.
 - `(not T)` as a **type complement** (see below).
 

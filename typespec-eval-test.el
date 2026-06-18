@@ -111,6 +111,17 @@
   (should (equal (typespec-eval '(function (symbol) (:guard t unknown)))
                  '(function (symbol) (:guard t unknown)))))
 
+(ert-deftest typespec-eval-call-args-rest ()
+  "&args / &rest meta-operands resolve to actual-argument tuples."
+  (should (equal (typespec-eval-call '(:forall (a b) (function (a b) (value-of &args)))
+                                     '(string integer))
+                 '(or string integer)))
+  (should (equal (typespec-eval-call '(function (integer &rest string) (value-of &rest))
+                                     '(1 "a" "b"))
+                 '(or (const "a") (const "b"))))
+  (should (equal (typespec-eval-call '(function (integer string) &args) '(1 "x"))
+                 '(:tuple (const 1) (const "x")))))
+
 (ert-deftest typespec-eval-call-allow-other-keys ()
   (should (equal (typespec-eval-call
                   '(function (&key (:plist-of (:foo string)) &allow-other-keys)

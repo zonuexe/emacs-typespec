@@ -850,6 +850,11 @@ Return a typespec result or a `(:cause-error ...)' form."
       (let ((func (typespec-eval--eval body)))
         (pcase func
           (`(function ,argspecs ,ret)
+           ;; Prefer the RAW return form (when BODY is a literal function type)
+           ;; so `&args'/`&rest' meta-operands survive to be substituted with
+           ;; the actual argument tuples below, rather than being prematurely
+           ;; collapsed by the `typespec-eval--eval' of BODY above.
+           (setq ret (pcase body (`(function ,_ ,raw-ret) raw-ret) (_ ret)))
            (pcase-let* ((`(,norm-argspecs ,allow-other-keys)
                          (typespec-eval-call--normalize-argspecs argspecs)))
              (when (eq norm-argspecs :invalid)
@@ -914,7 +919,11 @@ Return a typespec result or a `(:cause-error ...)' form."
                        (cl-return-from typespec-eval-call--
                          (typespec-eval--make-cause-error
                           (list 'wrong-number-of-arguments nargs)))))))
-                 (let ((ret (typespec-eval--eval ret)))
+                 (let* ((ret (typespec-eval-call--substitute
+                              ret '&args (cons :tuple args)))
+                        (ret (typespec-eval-call--substitute
+                              ret '&rest (cons :tuple rest-args)))
+                        (ret (typespec-eval--eval ret)))
                    (dolist (binding bindings)
                      (setq ret (typespec-eval-call--substitute
                                 ret (car binding) (cdr binding))))
