@@ -9,9 +9,15 @@ and PHPStan experience with Lisp best practices.
 The current draft lives in [**`typespec.md`**](typespec.md).
 Type-level evaluation semantics (guards, assertions, and conditional
 return types) are documented in [**`type-level-evaluation.md`**](type-level-evaluation.md).
+How the bundled `typespec-eval` evaluator conforms to the spec — including
+known gaps and soundness bugs — is tracked in
+[**`conformance.md`**](conformance.md).
 
 > [!WARNING]
-> This is an early draft with no full implementation yet. For now, [`ert-fnspec-check`][ert-fnspec-check] can be used for property-based checking.
+> This is an early draft. A type-level evaluator (`typespec-eval`) exists for
+> constant folding and inference, but there is no full type checker yet; see
+> [`conformance.md`](conformance.md) for status. For property-based checking,
+> [`ert-fnspec-check`][ert-fnspec-check] can be used.
 
 [ert-fnspec-check]: https://github.com/zonuexe/ert-fnspec-check.el
 

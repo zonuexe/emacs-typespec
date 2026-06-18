@@ -330,6 +330,13 @@ compatibility and because they are logical operators rather than base types.
 `(diff A B)` does not require `B` to be a subtype of `A`; it is simply
 “values in `A` that are not in `B`”.
 
+Note: the symbol `not` is overloaded. As a **type combinator**, `(not T)` is
+the complement described here. Inside an `if` PRED position (see
+`type-level-evaluation.md`), `(not expr)` is instead the ordinary boolean
+predicate. The reference evaluator currently folds only the predicate reading,
+so for a complement *type* prefer `(diff mixed T)`, which it supports. See
+[`conformance.md`](conformance.md).
+
 Example usage:
 
 ```emacs-lisp
@@ -510,6 +517,11 @@ decidable. Implementations should keep the relation **sound** — never report
 `S <: T` unless it holds — and may answer "cannot prove" (treated as not a
 subtype) when a precise decision is out of reach.
 
+The bundled `typespec-eval` evaluator currently approximates subtyping with a
+coarse type-category check; it does not yet consult range bounds, container
+element types, or function variance, and a few cases are not yet sound. See
+[`conformance.md`](conformance.md) for the precise per-feature status.
+
 ## Normalization and Equivalence
 
 Two types are **equivalent**, written `T1 ≡ T2`, when each is a subtype of the
@@ -519,7 +531,10 @@ rather than relying on implicit reductions.
 
 ### Identity and absorbing elements
 
-- `(or)` ≡ `never`; `(and)` ≡ `t` (the universal type).
+- `(or)` ≡ `never`; `(and)` ≡ `t` (the universal type). Because `t` is
+  treated like `mixed`, an implementation may equivalently emit `mixed` for the
+  empty intersection.
+- `(or (const t) (const nil))` ≡ `boolean` (and vice versa).
 - `(or T)` ≡ `T`; `(and T)` ≡ `T`.
 - In `or`, `never` is the identity element (drop it); if any member is a top
   type (`t`/`mixed`/`unknown`) the whole union collapses to that top.
@@ -641,6 +656,11 @@ context-dependent (e.g. `integer` vs `positive-int`). In contrast,
 `generalize-signed` encodes a single, fixed widening rule for numeric
 literals, so it does not take an explicit target.
 
+Conservative behavior: `generalize` yields `TARGET` when `T` is a `const` or a
+provable subtype of `TARGET`; when the relationship cannot be established it
+preserves the `(generalize T TARGET)` form rather than asserting an unproven
+widening.
+
 Example usage:
 
 ```emacs-lisp
@@ -675,6 +695,7 @@ Example usage:
 - `(const 0)` or `(const 0.0)` => `(const 0)` or `(const 0.0)`
 - `integer`/`float`/`number` => unchanged
 - `unknown`/`mixed` => `never`
+- any other non-numeric type (e.g. `string`) => `never`
 
 The `unknown`/`mixed` case intentionally **fails closed**. Here, “fails
 closed” means the type checker does not guess a looser numeric type when
@@ -944,6 +965,11 @@ carry additional, unspecified keys, model it with the **open** form
 `(:plist K V)` instead (optionally intersected with a `:plist-of` for the keys
 you do know). Duplicate keys in a `:plist-of` form are not allowed; the first
 binding wins if a tool encounters them.
+
+In a `&keys` argument list, an explicit `&allow-other-keys` marker opens an
+otherwise sealed `:plist-of`, permitting keys beyond those listed (mirroring
+`cl-defun`). The reference evaluator enforces sealed `:plist-of` key sets at
+call sites and honors `&allow-other-keys`.
 
 ## Container Types
 
