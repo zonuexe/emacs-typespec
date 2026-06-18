@@ -4,7 +4,7 @@ EMACS ?= emacs
 LOAD_PATH ?= -L .
 
 # .el sources to byte-compile (dependency order; excludes *-test.el)
-EL_SOURCES = typespec-core.el typespec-resolver.el typespec.el typespec-elsa.el \
+EL_SOURCES = typespec-core.el typespec.el typespec-builtins.el \
 	typespec-eval-core.el typespec-eval-types.el typespec-eval-var.el \
 	typespec-eval-simplify.el typespec-eval-struct.el typespec-eval-numeric.el \
 	typespec-eval-op.el typespec-eval.el
