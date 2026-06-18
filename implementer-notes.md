@@ -58,6 +58,8 @@ lowerings for tooling (e.g., Elsa) that cannot express every typespec feature.
 - `(downcast T TARGET)` => `TARGET` (treat as explicit assertion)
 - `(benevolent T)` => `T` but consider emitting a warning marker or lowering
   confidence if supported (this is an explicit soundness trade-off)
+- `(:cause-error INFO)` => treat as `never` or preserve as an error marker
+  (recommended: keep INFO for diagnostics, but exclude it from normal flows)
 
 ### Conditional return types (tooling caveat)
 

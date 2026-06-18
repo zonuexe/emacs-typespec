@@ -67,6 +67,41 @@ The return value is also treated as that same refined type.
 In other words, `:assert` is shorthand for “this function returns the
 checked value and refines it on success.”
 
+### Optional result type for `:guard` / `:guard!`
+
+Some predicates return a useful non-boolean value on the true branch
+(`bound-and-true-p`-style helpers). You can express that with an
+optional second component:
+
+```emacs-lisp
+(function (unknown) (:guard string STRING))
+(function (unknown) (:guard! string STRING))
+```
+
+- The first slot (`string` above) is the refinement target for the
+  *argument*.
+- The optional second slot (`STRING` above) is the *returned* value type
+  on the true branch. If omitted, it defaults to `boolean`.
+- For `:guard!`, the false branch refines the argument to `(not string)`
+  and the return is `nil` (or `boolean` if no return slot is given).
+
+Example (true-branch returns the *bound value* of the symbol; the
+argument itself is still the symbol):
+
+```emacs-lisp
+(typespec #'bound-and-true-p
+  ;; bound-and-true-p returns the variable's value (unknown type here),
+  ;; while refining that the symbol is non-nil and bound.
+  (function (symbol) (:guard t unknown)))
+```
+
+## `:cause-error` (diagnostic pseudo-type)
+
+Type-level evaluation can return `(:cause-error INFO)` when a call is
+invalid (e.g. wrong number of arguments or wrong argument type). This
+is a diagnostic marker, not a runtime value. Tools may treat it as
+`never` for flow purposes, or preserve it to report detailed errors.
+
 Another example with a state-dependent predicate (allowed here, but not
 inside `if` predicates):
 
@@ -82,6 +117,94 @@ inside `if` predicates):
 
 `process-live-p` is state-dependent, so it is not allowed in `if` predicates,
 but it is fine inside `:assert` because the check happens at runtime.
+
+## Function Call Evaluation (`typespec-eval-call`)
+
+The `typespec-eval-call` function evaluates function application at the type
+level. It takes a function type specification and a list of argument types,
+and returns either the result type or a `(:cause-error ...)` form.
+
+### Argument Validation
+
+`typespec-eval-call` validates:
+- **Argument count**: Checks that the number of arguments matches the function's
+  required and optional parameters.
+- **Argument types**: Validates that each argument type is compatible with the
+  corresponding parameter type using subtype checking.
+- **Keyword arguments**: For `&keys` parameters, validates that keyword-value
+  pairs match the expected plist structure, with optional `&allow-other-keys`
+  support.
+
+### Type Variable Substitution
+
+When the function type includes `:forall` (polymorphic types), `typespec-eval-call`
+substitutes type variables with the actual argument types. For example:
+
+```emacs-lisp
+(typespec-eval-call '(:forall (a) (function (a) a)) '("foo"))
+;; => (const "foo")
+```
+
+The type variable `a` is substituted with the argument type `(const "foo")`,
+and the return type becomes `(const "foo")`.
+
+### Error Reporting
+
+When validation fails, `typespec-eval-call` returns `(:cause-error INFO)` where
+`INFO` is a list describing the error:
+
+- `(wrong-number-of-arguments N)` - Too few or too many arguments
+- `(wrong-type-argument EXPECTED ACTUAL)` - Type mismatch
+
+Example:
+
+```emacs-lisp
+(typespec-eval-call '(function (number) (const t)) '("foo"))
+;; => (:cause-error (wrong-type-argument number "foo"))
+```
+
+### Subtype Checking
+
+`typespec-eval-call` uses the Emacs Lisp type hierarchy (as defined in
+`elisp_type_hierarchy.txt`) to determine type compatibility. For example,
+`fixnum` is compatible with `integer`, which is compatible with `number`:
+
+```emacs-lisp
+(typespec-eval-call '(function (number) (const t)) '(fixnum))
+;; => (const t)
+```
+
+## Downcast and Benevolent
+
+### `downcast`
+
+`(downcast VALUE TARGET)` is an explicit cast. At type-evaluation time it
+reduces to `TARGET`, regardless of the inferred type of `VALUE`. This is
+intentionally *unsafe* and is meant to be used only when you have
+out-of-band knowledge that `VALUE` is compatible with `TARGET`.
+
+Type checkers should treat `downcast` as an assertion: it does **not**
+require `VALUE` to be a subtype of `TARGET`, but it should be visible in
+diagnostics when a mismatch would otherwise be flagged.
+
+### `benevolent`
+
+`(benevolent T)` is a **soft constraint** that relaxes strict checking.
+The evaluator preserves the wrapper and only evaluates the inner type:
+
+```
+(benevolent T) => (benevolent (eval T))
+```
+
+Type checkers should treat this as “accept `T` if possible, but allow
+broader values without error.” A practical default policy is:
+
+- If the value’s type is a subtype of `T`, accept it normally.
+- Otherwise, allow it **without widening** the value’s inferred type.
+  This keeps the exact type information while suppressing errors.
+
+This is distinct from an explicit union like `(or T other)`; `benevolent`
+is a *policy marker* rather than a concrete type expansion.
 
 ## Conditional Return Types (Restricted)
 
@@ -122,19 +245,19 @@ Sequence and list accessors:
 - `plist-get`, `plist-member`
 
 Numeric and math helpers:
-- `log10`, `lsh`, `zerop`, `number-sequence`
+- `zerop`, `number-sequence`
 - `+`, `-`, `*`, `/`, `%`, `mod`, `1+`, `1-`, `abs`, `max`, `min`
 - `floor`, `ceiling`, `round`, `truncate`, `isnan`, `cl-signum`
 - `logand`, `logior`, `logxor`, `lognot`, `logcount`, `ash`
 
 String helpers:
-- `concat`, `string-as-multibyte`, `string-as-unibyte`, `string-bytes`
+- `concat`, `string-bytes`
 - `string-chop-newline`, `string-clean-whitespace`, `string-distance`
 - `string-equal`, `string-equal-ignore-case`, `string-greaterp`, `string-lessp`
 - `string-join`, `string-limit`, `string-lines`, `string-match-p`
 - `upcase`, `downcase`, `capitalize`, `char-to-string`, `make-string`, `substring`
 - `string-pad`, `string-prefix-p`, `string-remove-prefix`, `string-remove-suffix`
-- `string-replace`, `string-reverse`, `string-search`, `string-split`, `string-suffix-p`
+- `string-replace`, `string-search`, `string-split`, `string-suffix-p`
 - `string-to-char`, `string-to-list`, `string-to-multibyte`, `string-to-number`
 - `string-to-unibyte`, `string-to-vector`, `string-trim`, `string-trim-left`
 - `string-trim-right`, `string-truncate-left`, `string-version-lessp`
@@ -227,3 +350,41 @@ Explanation:
   meaning the argument is refined on success and an error is expected on failure.
 - Otherwise the return type is treated as `:guard`, meaning it only refines on
   the true branch and does not imply the false branch complement.
+
+## Numeric Range Evaluation
+
+Type-level evaluation uses a unified representation for numeric ranges to
+enable efficient range arithmetic and type inference. Numeric keyword types
+like `positive-int`, `non-negative-int`, `negative-int`, `non-positive-int`,
+and `fixnum` are normalized to their canonical range forms during evaluation.
+
+### Range Normalization
+
+- `positive-int` → `(integer 1 *)`
+- `non-negative-int` → `(integer 0 *)`
+- `negative-int` → `(integer * -1)`
+- `non-positive-int` → `(integer * 0)`
+- `fixnum` → `(integer most-negative-fixnum most-positive-fixnum)`
+
+This normalization ensures that:
+- Range arithmetic operations (e.g., `1+`, `1-`, `abs`, `cl-signum`) can be
+  applied uniformly to all numeric types.
+- Type inference produces precise range results (e.g., `(1+ fixnum)` returns
+  an expanded integer range rather than a generic `integer` type).
+- Predicate evaluation (e.g., `fixnump`) correctly recognizes ranges that match
+  the keyword's bounds.
+
+### Range Operations
+
+Numeric operations preserve range information when possible:
+- Unary operations (`1+`, `1-`, `abs`, `cl-signum`) compute new ranges from
+  input ranges.
+- Binary operations (`+`, `-`, `*`, `/`, `%`, `mod`) combine ranges when both
+  operands are range types.
+- Comparison operations (`=`, `<`, `>`, etc.) can evaluate to `(const t)` or
+  `(const nil)` when ranges are disjoint or fully contained.
+
+When a range operation produces a result that exactly matches a keyword type's
+bounds (e.g., `fixnum`), the evaluator may preserve the keyword symbol for
+readability, but canonical range forms are preferred for precision and
+consistency.

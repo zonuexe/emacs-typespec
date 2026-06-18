@@ -56,13 +56,32 @@ Let's consider a more complex example.
 
 ;; This looks reasonable, but it misses literal refinement: (my-times2 42)
 ;; can be inferred as (const 84), not just integer.
-(typespec #'my-times2 (:forall (a) (function (a) a)))
+(typespec #'my-times2 (:forall (a) (function ((a number)) a)))
 
 ;; Use generalize-signed to widen literal results while preserving sign.
 (typespec #'my-times2
-  (:forall (a)
+  (:forall ((a number))
     (function (a) (generalize-signed a))))
 ```
+
+Add `(declare (typespec-ftype ...))` inside a function to emit an `ftype`
+declaration derived from typespec annotations.
+
+``` elisp
+(typespec #'my-times2
+  (:forall ((a number))
+    (function (a) (generalize-signed a))))
+
+(defun my-times2 (n)
+  "Return N multiplied by 2."
+  (declare (typespec-ftype (function (number) number)))
+  ;; (declare (ftype (function (number) number)))
+  (+ n n))
+```
+
+> [!WARNING]
+> `typespec-ftype` may become useful for compile-time optimization and
+> performance, but it is still experimental and not strongly recommended yet.
 
 ### Property-based checks
 

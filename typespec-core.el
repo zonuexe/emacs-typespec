@@ -28,6 +28,8 @@
 ;; See typespec.md for the current spec syntax and conventions.
 
 ;;; Code:
+;; (require 'byte-run) byte-run is not feature.
+
 (defconst typespec-baseline-version "2026-01-01"
   "Baseline feature set version for typespec resolvers.")
 
@@ -61,17 +63,17 @@
     memq member member-ignore-case
     assoc assq rassoc alist-get
     plist-get plist-member
-    log10 lsh zerop number-sequence
+    zerop number-sequence
     + - * / % mod 1+ 1- abs max min
     floor ceiling round truncate isnan cl-signum
     logand logior logxor lognot logcount ash
-    concat string-as-multibyte string-as-unibyte string-bytes
+    concat string-bytes
     string-chop-newline string-clean-whitespace string-distance
     string-equal string-equal-ignore-case string-greaterp string-lessp
     string-join string-limit string-lines string-match-p
     upcase downcase capitalize char-to-string make-string substring
     string-pad string-prefix-p string-remove-prefix string-remove-suffix
-    string-replace string-reverse string-search string-split string-suffix-p
+    string-replace string-search string-split string-suffix-p
     string-to-char string-to-list string-to-multibyte string-to-number
     string-to-unibyte string-to-vector string-trim string-trim-left
     string-trim-right string-truncate-left string-version-lessp
@@ -115,6 +117,129 @@
   (list :spec spec
         :baseline typespec-baseline-version
         :resolvers (copy-sequence typespec-resolvers)))
+
+;;; Typespec -> ftype erasure
+
+(defconst typespec--ftype-aliases
+  '((integer-or-marker . (or integer marker))
+    (number-or-marker . (or number marker))
+    (positive-int . integer)
+    (non-negative-int . integer)
+    (negative-int . integer)
+    (non-positive-int . integer)
+    (hook . (list function)))
+  "Aliases for erasing typespec forms into ftype-compatible forms.")
+
+(defun typespec--ftype-const-type (value)
+  "Return a simple ftype for constant VALUE."
+  (cond
+   ((eq value t) 'boolean)
+   ((null value) 'null)
+   ((stringp value) 'string)
+   ((integerp value) 'integer)
+   ((floatp value) 'float)
+   ((symbolp value) 'symbol)
+   (t 't)))
+
+(defun typespec--ftype-simplify-or (items)
+  "Simplify ftype OR ITEMS into a minimal form."
+  (let* ((flat (seq-filter #'identity items))
+         (uniq (delete-dups (copy-sequence flat))))
+    (cond
+     ((null uniq) 't)
+     ((null (cdr uniq)) (car uniq))
+     ((equal uniq '(integer float)) 'number)
+     ((equal uniq '(float integer)) 'number)
+     ((equal uniq '(integer marker)) 'integer-or-marker)
+     ((equal uniq '(marker integer)) 'integer-or-marker)
+     ((equal uniq '(number marker)) 'number-or-marker)
+     ((equal uniq '(marker number)) 'number-or-marker)
+     (t (cons 'or uniq)))))
+
+(defun typespec--ftype-erase (form)
+  "Erase typespec FORM into an `ftype`-compatible type expression."
+  (pcase form
+    ((pred symbolp)
+     (or (cdr (assq form typespec--ftype-aliases))
+         (pcase form
+           ((or 'unknown 'mixed 'void) 't)
+           ('never 'nil)
+           (_ form))))
+    (`(const ,value) (typespec--ftype-const-type value))
+    (`(:guard ,type) (typespec--ftype-erase type))
+    (`(:guard! ,type) (typespec--ftype-erase type))
+    (`(:assert ,type) (typespec--ftype-erase type))
+    (`(:cause-error . ,_) 't)
+    (`(benevolent ,type) (typespec--ftype-erase type))
+    (`(generalize ,_ ,target) (typespec--ftype-erase target))
+    (`(generalize-signed ,_) 't)
+    (`(downcast ,_ ,target) (typespec--ftype-erase target))
+    (`(diff ,lhs ,rhs)
+     (list 'and (typespec--ftype-erase lhs)
+           (list 'not (typespec--ftype-erase rhs))))
+    (`(value-of ,_) 't)
+    (`(:alist . ,_) 'list)
+    (`(:plist . ,_) 'list)
+    (`(:plist-of . ,_) 'list)
+    (`(:tuple . ,items)
+     (cons 'list (mapcar #'typespec--ftype-erase items)))
+    (`(function ,argspecs ,ret)
+     (list 'function
+           (typespec--ftype-argspecs argspecs)
+           (typespec--ftype-erase ret)))
+    (`(:forall ,_ ,body) (typespec--ftype-erase body))
+    (`(,op . ,args)
+     (cond
+      ((eq op 'or)
+       (typespec--ftype-simplify-or (mapcar #'typespec--ftype-erase args)))
+      ((memq op '(and not))
+       (cons op (mapcar #'typespec--ftype-erase args)))
+      (t 't)))
+    (_ 't)))
+
+(defun typespec--ftype-argspecs (argspecs)
+  "Return ftype-compatible ARGSPECS."
+  (let ((out nil)
+        (in-key nil))
+    (dolist (spec argspecs)
+      (pcase spec
+        ('&keys (push '&key out) (setq in-key t))
+        ('&key (push '&key out) (setq in-key t))
+        ((or '&optional '&rest '&allow-other-keys)
+         (push spec out))
+        (_
+         (if (and in-key (consp spec))
+             (setq in-key t)
+           (push (typespec--ftype-erase spec) out)))))
+    (nreverse out)))
+
+(defun typespec--ftype-from-spec (spec)
+  "Return an `ftype` function spec for SPEC, or nil."
+  (pcase spec
+    (`(:forall ,_ ,body) (typespec--ftype-from-spec body))
+    (`(function ,argspecs ,ret)
+     (list 'function
+           (typespec--ftype-argspecs argspecs)
+           (typespec--ftype-erase ret)))
+    (_ nil)))
+
+;;; `defun' declaration handler
+
+(defun typespec--defun-decl-ftype (function args val &optional function-name)
+  "Handle `typespec-ftype` declarations.
+FUNCTION is the target symbol, ARGS are the lambda list arguments, and
+VAL is the declared typespec."
+  (let* ((spec (pcase val
+                 (`(:forall . ,_) val)
+                 (`(function . ,_) val)
+                 (_ `(function ,val))))
+         (ftype (typespec--ftype-from-spec spec)))
+    (when ftype
+      (byte-run--set-function-type function args ftype function-name))))
+
+(when (boundp 'defun-declarations-alist)
+  (add-to-list 'defun-declarations-alist
+               (list 'typespec-ftype #'typespec--defun-decl-ftype)))
 
 (provide 'typespec-core)
 ;;; typespec-core.el ends here

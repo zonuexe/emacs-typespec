@@ -6,9 +6,12 @@ native-compiler type system; instead, it aims to make a dynamic language
 practical by combining TypeScript/PHPStan experience with Lisp best practices
 into a rich, usable type vocabulary.
 
+- **`declare (ftype ...)`** and [elisp_type_hierarchy]
 - [**`cl-typep`**](https://www.gnu.org/software/emacs/manual/html_node/cl/Type-Predicates.html) (predicate-style types)
 - [**`defcustom`***](https://www.gnu.org/software/emacs/manual/html_node/elisp/Customization-Types.html) (user customization type expressions; optional extensions)
 - [**Elsa**](https://github.com/emacs-elsa/Elsa) (static analyzer type language)
+
+[elisp_type_hierarchy]: https://github.com/emacs-mirror/emacs/blob/master/doc/lispref/elisp_type_hierarchy.txt
 
 The goal is a single *pragmatic* type language: it accepts a curated subset of
 `cl-typep` and Elsa, and it allows optional `defcustom`-style extensions.
@@ -16,12 +19,36 @@ Compatibility is one-way: all supported `cl-typep` forms should be accepted by
 this language, but not every expression in this language must be valid in those
 systems.
 
+## Emacs `declare (ftype ...)` Compatibility
+
+Typespec aims to be a **100% superset** of Emacs Lisp `declare (ftype ...)`
+as introduced in Emacs 29.1. Concretely:
+
+- Any type accepted by the native compiler’s constraint system (via
+  `comp-type-spec-to-cstr`) is valid typespec.
+- Typespec may accept additional constructs beyond `ftype`/`comp-cstr`.
+
+The canonical Emacs type hierarchy is included in [`elisp_type_hierarchy.txt`][elisp_type_hierarchy]
+and should be treated as the ground truth for base type relationships.
+
+The typespec evaluator implements subtype checking based on this hierarchy.
+For example, `fixnum` is a subtype of `integer`, which is a subtype of `number`.
+Similarly, `hook` is a subtype of `list`, which is a subtype of `sequence`.
+This enables type-level evaluation to correctly handle subtype relationships
+when checking function call compatibility and type inference.
+
+We do not attempt to enumerate the full set of `ftype`-annotated functions in
+this document; instead, we treat the Emacs native compiler's accepted type
+specifications as the compatibility baseline and add typespec-only extensions
+on top.
+
 ## Goals
 
 - S-expression syntax with small surface area.
 - Readable by Lisp users; no reader macros required.
 - Avoid type-theory contradictions where practical.
 - Keep a clear escape hatch for “any” and “unknown” values.
+- Allow erasing advanced Typespec forms into `ftype`-compatible declarations.
 
 ## Non-goals
 
@@ -41,8 +68,8 @@ TYPE ::= symbol
        | (not TYPE)
        | (diff TYPE TYPE)
        | (function ARGS TYPE)
-       | (function ARGS (:guard TYPE))
-       | (function ARGS (:guard! TYPE))
+       | (function ARGS (:guard TYPE [RET]))
+       | (function ARGS (:guard! TYPE [RET]))
        | (function ARGS (:assert TYPE))
        | (if PRED TYPE TYPE)
        | (integer LOW HIGH)
@@ -55,6 +82,7 @@ TYPE ::= symbol
        | (sequence TYPE)
        | (cons TYPE TYPE)
        | (hash-table TYPE TYPE)
+       | (hook FUNTYPE . REST)
        | (:tuple TYPE...)
        | (:tuple TYPE... . TYPE)
        | (:alist TYPE TYPE)
@@ -102,7 +130,8 @@ notation.
 
 `t`, `nil`, `null`, `never`, `atom`, `cons`, `list`, `vector`, `sequence`,
 `symbol`, `keyword`, `boolean`/`bool`, `integer`/`int`, `float`,
-`real`, `number`, `character`, `string`, `hash-table`, `function`
+`real`, `number`, `character`, `string`, `hash-table`, `function`,
+`marker`, `integer-or-marker`, `number-or-marker`, `hook`
 
 Common numeric shorthand (recommended):
 
@@ -112,12 +141,30 @@ Common numeric shorthand (recommended):
 - `non-positive-int` — `(integer * 0)`
 - `positive-float` — `(float (0) *)`
 - `negative-float` — `(float * (0))`
+- `fixnum` — `(integer most-negative-fixnum most-positive-fixnum)`
+
+Composite types (Emacs Lisp built-in):
+- `marker` — buffer position marker
+- `integer-or-marker` — `(or integer marker)`
+- `number-or-marker` — `(or number marker)`
+- `hook` — `(hook (function () t))` (list of zero-arg functions)
 
 Range notation uses `*` for an unbounded side. For example,
 `(integer * 10)` means any integer <= 10, and `(integer 0 *)` means
 any integer >= 0. Bounds are inclusive by default.
 To indicate an exclusive bound, wrap it in a list: `(integer (0) *)`
 means greater than 0, and `(integer * (10))` means less than 10.
+
+**Normalization policy**: Keyword types like `positive-int`, `non-negative-int`,
+`negative-int`, `non-positive-int`, and `fixnum` are treated as **input aliases**
+and normalized to their canonical range forms during type-level evaluation.
+For example, `positive-int` is normalized to `(integer 1 *)` internally, and
+operations on these types return the canonical range forms rather than the
+keyword symbols. This ensures consistent range arithmetic and simplifies
+internal processing. Output types may preserve the original keyword when the
+range exactly matches the keyword's bounds (e.g., `fixnum` is preserved when
+the range is exactly `(integer most-negative-fixnum most-positive-fixnum)`),
+but in general, canonical range forms are preferred for precision.
 
 Notes:
 
@@ -166,6 +213,28 @@ Example usage:
 ;; `mixed` for dynamic values you intentionally pass through unchecked.
 (typespec #'eval (function (mixed) mixed))
 ```
+
+### Type Guards
+
+`(:guard TYPE [RET])` and `(:guard! TYPE [RET])` allow an optional
+**return type on the true branch**. If RET is omitted, the return type
+defaults to `boolean`.
+
+```emacs-lisp
+;; True branch: ARG is string, return value is the same string.
+(function (unknown) (:guard string string))
+
+;; Total predicate: true branch returns symbol, false branch returns nil,
+;; argument is refined to symbol / (not symbol).
+(function (symbol) (:guard! t symbol))
+
+;; True branch returns the *bound value* (unknown type), while the
+;; argument is known to be a bound, non-nil symbol.
+(function (symbol) (:guard t unknown))  ; e.g. bound-and-true-p
+```
+
+For `:guard!`, the false branch refines the argument to `(not TYPE)` and
+the return is `nil` (or `boolean` if RET is omitted).
 
 ### Void
 
@@ -424,6 +493,14 @@ Example usage:
   (function (number) (generalize-signed (const -1))))
 ```
 
+### `:cause-error` (pseudo-type)
+
+`(:cause-error INFO)` is a pseudo-type returned by type-level evaluation
+for invalid calls (e.g. wrong arity or wrong argument type). It is not a
+runtime value, but a diagnostic marker that tools can surface. Static
+analyzers may treat it as equivalent to `never`, or preserve it to keep
+error context.
+
 ### `downcast` (explicit type assertion)
 
 `(downcast T TARGET)` explicitly treats `T` as `TARGET`. This is a deliberate
@@ -622,6 +699,8 @@ similar to PHPStan array-shapes.
 Keys are typically keywords, but any literal key is allowed (e.g. symbols
 or strings) if that matches the actual plist usage. Use `(:? KEY TYPE)`
 to mark an optional key.
+When a key is optional, its value type is treated as `(or (const nil) TYPE)`
+for plist helpers like `plist-get`/`plist-value-of`.
 
 ## Container Types
 
@@ -742,6 +821,38 @@ There is no special “nullable” marker. Use union:
 Defcustom-style forms are intentionally **not** part of the core typespec.
 If a consumer chooses to support them, they should be treated as extensions
 and documented separately to avoid confusion with `cl-typep` semantics.
+
+When interpreting defcustom types, `:completions` (added in Emacs 31) may be
+treated as a fixed value set; in this case the values are used as a concrete
+union of allowed constants. `:complete` (a completion function hook) is **not**
+compatible with typespec evaluation and should be ignored by type consumers.
+If a safe, deterministic mapping is proposed, support for `:complete` may be
+added as an optional extension.
+
+### Hook Types
+
+`hook` is a special list type that represents a list of functions (typically
+used for Emacs hooks). The canonical form is `(hook FUNTYPE . REST)` where
+`FUNTYPE` specifies the function signature and `REST` may contain additional
+metadata such as `:options`.
+
+For defcustom `hook` types, interpret them as a hook type with explicit
+arity. The default is a normal hook (zero-arg functions):
+`hook` ⇒ `(hook (function () t))`.
+
+If `:options` is present, it may be recorded as a value constraint without
+changing the core type:
+
+```emacs-lisp
+(hook (function () t) :options (member foo bar))
+```
+
+The `:options` list is treated as UI metadata; it does not change the
+callability rules.
+
+Note: `hook` is a subtype of `list` in the Emacs type hierarchy, so it can
+be used wherever a list is expected, but it carries additional semantic
+meaning for hook-specific operations.
 
 ## Polymorphism / Type Variables
 
