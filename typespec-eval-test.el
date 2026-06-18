@@ -811,6 +811,15 @@
   (should (equal (typespec-eval '(null (list+ unknown)))
                  '(const nil))))
 
+(ert-deftest typespec-eval-diff-complement ()
+  "`(diff mixed T)' is the type complement; double-negation eliminates."
+  (should (equal (typespec-eval '(diff mixed string)) '(diff mixed string)))
+  (should (equal (typespec-eval '(diff mixed (diff mixed string))) 'string))
+  (should (equal (typespec-eval '(diff mixed never)) 'mixed))
+  (should (equal (typespec-eval '(diff mixed mixed)) 'never))
+  (should (equal (typespec-eval '(diff mixed t)) 'never))
+  (should (equal (typespec-eval '(diff mixed unknown)) 'never)))
+
 (ert-deftest typespec-eval-concat ()
   (should (equal (typespec-eval '(concat "a" "b" "c"))
                  '(const "abc")))

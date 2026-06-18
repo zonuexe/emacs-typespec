@@ -718,7 +718,8 @@ RESULT-TYPE is returned when both arguments are string types."
     (cond
      ((eq lhs 'never) 'never)
      ((eq rhs 'never) lhs)
-     ((eq rhs 'mixed) 'never)
+     ;; Subtracting a top type (the whole universe) leaves nothing.
+     ((memq rhs '(mixed t unknown)) 'never)
      ((equal lhs rhs) 'never)
      ((and (consp rhs) (eq (car rhs) 'or))
       (let ((items (cdr rhs))

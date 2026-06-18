@@ -78,7 +78,7 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | Bare range literals normalized (`(integer n n)` ≡ `(const n)`, inverted ≡ `never`, `(integer * *)` ≡ `integer`) | ✅ |
 | Integer range union merge | ✗ (spec says "may"; not done — `simplify.el` sits below `numeric.el` so cannot reuse the range helpers) |
 | `(:tuple)` ≡ `(const nil)`; `(list+ T)` / `(:alist K V)` expansion | ✗ (opt-in normalizations; surface form preserved) |
-| `(not (not T))` ≡ `T`, `(not never)` ≡ `t`, etc. | ✗ — see *the `not` overload* |
+| `(not (not T))` ≡ `T`, `(not never)` ≡ `t`, etc. | ◑ — via the complement spelling `(diff mixed T)`; bare `(not T)` is the predicate (see *the `not` overload*) |
 
 ## Return-position evaluation
 
@@ -147,7 +147,8 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 - Argument-refinement effects of `:guard`/`:guard!`/`:assert` (checker-level).
 - `:guard!` false-branch complement (distinct behavior from `:guard`).
 - `if`-PRED predicate whitelist enforcement and RETTYPE-position enforcement.
-- `(not T)` as a **type complement** (see below).
+- Bare `(not T)` as a **type complement** — intentionally not done; use
+  `(diff mixed T)` (see below).
 
 ## Evaluator behaviors now documented
 
@@ -175,8 +176,17 @@ The symbol `not` is used in two roles:
 - As a **boolean predicate** inside `if` PRED positions, `(not expr)` negates a
   truth value.
 
-The reference evaluator currently implements **only the predicate reading**:
-`(not string)` folds to `(const nil)`, and the complement-`not` normalization
-rules (`(not (not T))` ≡ `T`, `(not never)` ≡ `t`, …) are therefore not
-applied. Until complement-`not`-as-a-type is implemented, express a complement
-type with `(diff mixed T)`, which the evaluator supports.
+**Resolution.** The reference evaluator implements `not` as the **boolean
+predicate** — and this is intentional, not a gap. `(not string)` folds to
+`(const nil)` (a string is always non-nil), `(not (list T))` to `boolean`
+(a list may be the empty list, i.e. `nil`), and so on. This reading is required
+by the conditional predicate language (`(if (not x) …)`) and is locked in by
+tests; overloading the same `(not X)` to also mean a type complement would
+break it.
+
+The type complement is therefore spelled `(diff mixed T)`, which the spec
+defines as equivalent to `(not T)`. The evaluator handles it fully:
+double-negation eliminates (`(diff mixed (diff mixed T))` ≡ `T`), subtracting a
+top type yields `never` (`(diff mixed mixed)`/`(diff mixed t)`/
+`(diff mixed unknown)`), and subtracting `never` yields `mixed`. See
+`typespec-eval-diff-complement` in `typespec-eval-test.el`.
