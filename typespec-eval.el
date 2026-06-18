@@ -673,13 +673,20 @@ S and P are plists from `typespec-eval-numeric-numeric-range-info'."
   "Non-nil if numeric type SUB is contained in numeric type SUPER.
 Honors range bounds (inclusive/exclusive) and the integer/float/number
 kind relation; `integer' and `float' do not flow into each other."
-  (let ((s (typespec-eval-numeric-numeric-range-info sub))
-        (p (typespec-eval-numeric-numeric-range-info super)))
-    (and s p
-         (let ((st (plist-get s :type)) (pt (plist-get p :type)))
-           (or (memq pt '(number real)) (eq st pt)))
-         (typespec-eval-call--num-low-contained-p s p)
-         (typespec-eval-call--num-high-contained-p s p))))
+  (cond
+   ;; `bignum' is the integers OUTSIDE the fixnum range — not a single
+   ;; interval, so the range model below would treat it as unbounded integer.
+   ;; Handle it explicitly and soundly.
+   ((eq super 'bignum) (eq sub 'bignum))
+   ((eq sub 'bignum) (memq super '(integer number real)))
+   (t
+    (let ((s (typespec-eval-numeric-numeric-range-info sub))
+          (p (typespec-eval-numeric-numeric-range-info super)))
+      (and s p
+           (let ((st (plist-get s :type)) (pt (plist-get p :type)))
+             (or (memq pt '(number real)) (eq st pt)))
+           (typespec-eval-call--num-low-contained-p s p)
+           (typespec-eval-call--num-high-contained-p s p))))))
 
 (defun typespec-eval-call--function-marker-p (spec)
   "Non-nil if SPEC is a function argument-list marker."

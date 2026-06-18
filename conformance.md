@@ -54,7 +54,7 @@ file; the link in `typespec.md` points at the upstream Emacs source only).
 | Function variance (params contravariant, return covariant) | ✅ |
 | `(or A1…An) <: T` iff every `Ai <: T` (value-side union) | ✅ |
 | `(const v) <: T` iff `v` inhabits `T` (range/bounds checked) | ✅ |
-| `fixnum`/`bignum` disjoint | ◑ — `integer <: fixnum` is now correctly rejected, but `bignum` is modeled as unbounded integer, so `fixnum <: bignum` is still accepted |
+| `fixnum`/`bignum` disjoint | ✅ — handled explicitly (`bignum` is the integers outside the fixnum range) |
 
 ## Normalization and equivalence
 
@@ -134,13 +134,10 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
    return (simple positional signatures), with invariance as a sound fallback.
 8. **Value-side `(or …)` is decomposed** — every member must be compatible.
 9. **`(const v)` inhabitance honors range bounds**, not just the category.
-
-### Remaining
-
-- **`fixnum`/`bignum` disjointness is partial.** `integer <: fixnum` is now
-  correctly rejected, but `integer-range-from` models `bignum` as an unbounded
-  integer range, so `fixnum <: bignum` is still accepted. A precise fix needs a
-  representation for "integers outside the fixnum range".
+10. **`fixnum`/`bignum` are disjoint.** `numeric-subtype-p` special-cases
+    `bignum` (the integers outside the fixnum range), so `fixnum <: bignum`,
+    `bignum <: fixnum`, and `(integer 0 5) <: bignum` are all rejected, while
+    `bignum <: integer`/`number` hold.
 
 ## Spec features not yet implemented
 
@@ -163,9 +160,8 @@ These were implemented before the spec described them, and are now written up:
 - **Rich `defcustom :type` → typespec translation** — `typespec.md` § Variable
   types.
 - **`&allow-other-keys`** (open `:plist-of`) — `typespec.md` § Keyed plists.
-
-Still undocumented: the **`&key` → `&keys`** argument-list alias normalization
-at call sites (a minor `cl-defun` convenience).
+- **`&key` → `&keys`** argument-list alias at call sites — the `cl-defun`
+  convenience covered by `typespec.md` § cl-defun keyword annotations.
 
 ## The `not` overload
 

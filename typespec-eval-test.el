@@ -191,6 +191,12 @@
     ;; `character' is a subtype of `fixnum'; plain `integer' is not.
     (should (equal (ok '(function (fixnum) (const t)) '(character)) '(const t)))
     (should (rejected '(function (fixnum) (const t)) '(integer)))
+    ;; `fixnum' and `bignum' are disjoint; both are subtypes of `integer'.
+    (should (rejected '(function (bignum) (const t)) '(fixnum)))
+    (should (rejected '(function (fixnum) (const t)) '(bignum)))
+    (should (rejected '(function (bignum) (const t)) '((integer 0 5))))
+    (should (equal (ok '(function (integer) (const t)) '(bignum)) '(const t)))
+    (should (equal (ok '(function (number) (const t)) '(bignum)) '(const t)))
     ;; Function variance: contravariant params, covariant return.
     (should (equal (ok '(function ((function (string) integer)) (const t))
                        '((function (unknown) integer)))
