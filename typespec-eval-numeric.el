@@ -307,6 +307,24 @@ Alias types are normalized to canonical range forms."
                       (t (float high)))))
         (typespec-eval--float-range lo hi))))))
 
+(defun typespec-eval-numeric-normalize-range (form)
+  "Normalize numeric range FORM to its canonical type.
+Singleton ranges collapse to `(const N)', fully-unbounded ranges to the base
+type symbol, exact fixnum ranges to `fixnum', and empty ranges to `never'.
+Non-numeric forms are returned unchanged."
+  (let ((info (typespec-eval-numeric-numeric-range-info form)))
+    (if (null info)
+        form
+      (let ((low (plist-get info :low))
+            (high (plist-get info :high))
+            (low-excl (plist-get info :low-excl))
+            (high-excl (plist-get info :high-excl)))
+        (if (and (numberp low) (numberp high)
+                 (or (> low high)
+                     (and (= low high) (or low-excl high-excl))))
+            'never
+          (typespec-eval-numeric-numeric-range-to-form info))))))
+
 ;;; Numeric range predicates
 
 (defun typespec-eval-numeric-numeric-range-singleton-p (info)

@@ -50,11 +50,19 @@
     (setq items (seq-uniq (mapcar #'typespec-eval--normalize-const-nil flat)
                           #'equal)))
   (cond
-   ((null items) 'never)
-   ((null (cdr items)) (car items))
-   ((equal items '((const t) (const nil))) 'boolean)
-   ((equal items '((const nil) (const t))) 'boolean)
-   (t (cons 'or items))))
+   ;; A top member absorbs the whole union (escape hatch / universal).
+   ((memq 'mixed items) 'mixed)
+   ((memq t items) t)
+   ((memq 'unknown items) 'unknown)
+   (t
+    ;; `never' is the identity element of `or'.
+    (setq items (delq 'never items))
+    (cond
+     ((null items) 'never)
+     ((null (cdr items)) (car items))
+     ((equal items '((const t) (const nil))) 'boolean)
+     ((equal items '((const nil) (const t))) 'boolean)
+     (t (cons 'or items))))))
 
 ;;; rx pattern helpers
 
@@ -120,6 +128,8 @@
    ((or (equal lhs '(const nil)) (equal rhs '(const nil))) 'never)
    ((equal lhs '(const t)) rhs)
    ((equal rhs '(const t)) lhs)
+   ((eq lhs t) rhs)
+   ((eq rhs t) lhs)
    ((eq lhs 'unknown) rhs)
    ((eq rhs 'unknown) lhs)
    ((eq lhs 'mixed) rhs)
@@ -168,9 +178,18 @@
     (or (typespec-eval-simplify-intersect-number-types lhs rhs) (list 'and lhs rhs)))
    (t (list 'and lhs rhs))))
 
+(defun typespec-eval-simplify--flatten-and-parts (form)
+  "Return the conjuncts of FORM, flattening nested `and' forms."
+  (if (and (consp form) (eq (car form) 'and))
+      (apply #'append
+             (mapcar #'typespec-eval-simplify--flatten-and-parts (cdr form)))
+    (list form)))
+
 (defun typespec-eval-simplify-and (items)
   "Return a simplified `(and ...)` form for ITEMS."
-  (let ((items (delq nil items)))
+  (let ((items (apply #'append
+                      (mapcar #'typespec-eval-simplify--flatten-and-parts
+                              (delq nil items)))))
     (cond
      ((null items) 'mixed)
      (t
@@ -180,7 +199,9 @@
             (setq result (if result (typespec-eval-simplify-and-merge result item) item))
             (when (eq result 'never)
               (throw 'typespec-eval--and result)))
-          (or result 'mixed)))))))
+          ;; The left-fold may re-nest conjunctions; flatten the final result.
+          (let ((parts (typespec-eval-simplify--flatten-and-parts (or result 'mixed))))
+            (if (cdr parts) (cons 'and parts) (car parts)))))))))
 
 ;;; Const value helpers
 

@@ -120,13 +120,13 @@
     (`(if ,pred ,then ,else)
      (typespec-eval-op-if pred then else))
     (`(integer ,low ,high)
-     (typespec-eval--integer-range low high))
+     (typespec-eval-numeric-normalize-range (typespec-eval--integer-range low high)))
     (`(float ,low ,high)
-     (typespec-eval--float-range low high))
+     (typespec-eval-numeric-normalize-range (typespec-eval--float-range low high)))
     (`(real ,low ,high)
-     (typespec-eval--real-range low high))
+     (typespec-eval-numeric-normalize-range (typespec-eval--real-range low high)))
     (`(number ,low ,high)
-     (typespec-eval--number-range low high))
+     (typespec-eval-numeric-normalize-range (typespec-eval--number-range low high)))
     ('positive-float
      (typespec-eval--float-range '(0) '*))
     ('negative-float

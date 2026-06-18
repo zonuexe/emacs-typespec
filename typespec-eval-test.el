@@ -197,6 +197,26 @@
     (should (equal (ok '(function ((list+ integer)) (const t)) '((list+ integer)))
                    '(const t)))))
 
+(ert-deftest typespec-eval-normalization ()
+  "Normalization completeness: range literals and or/and identities."
+  ;; Range literals.
+  (should (equal (typespec-eval '(integer 5 5)) '(const 5)))
+  (should (equal (typespec-eval '(integer 5 1)) 'never))
+  (should (equal (typespec-eval '(integer * *)) 'integer))
+  (should (equal (typespec-eval '(float * *)) 'float))
+  (should (equal (typespec-eval '(integer 0 10)) '(integer 0 10)))
+  (should (equal (typespec-eval '(integer 1 *)) '(integer 1 *)))
+  ;; `or' identity / absorbing elements.
+  (should (equal (typespec-eval '(or never integer)) 'integer))
+  (should (equal (typespec-eval '(or never never)) 'never))
+  (should (equal (typespec-eval '(or mixed integer)) 'mixed))
+  (should (equal (typespec-eval '(or unknown string)) 'unknown))
+  (should (equal (typespec-eval '(or t integer)) t))
+  ;; `and' identity / flattening.
+  (should (equal (typespec-eval '(and t integer)) 'integer))
+  (should (equal (typespec-eval '(and integer (and string symbol)))
+                 '(and integer string symbol))))
+
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))
                  '(const t)))
