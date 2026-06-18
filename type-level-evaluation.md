@@ -4,6 +4,11 @@ This document defines how typespec evaluates predicate-like constructs
 and conditional types. This is separate from the syntax overview in
 `typespec.md`.
 
+The constructs described here — `:guard`, `:guard!`, `:assert`, and the
+conditional `(if PRED ...)` — are the `RETTYPE` forms in the grammar: they are
+valid **only** as the return slot of a `(function ARGS RETTYPE)` type, never as
+a general `TYPE` in arguments, containers, or unions.
+
 ## Type Guards (TypeScript-style)
 
 To model type-guard predicates (e.g., `x is string` in TypeScript),

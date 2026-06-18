@@ -67,17 +67,14 @@ TYPE ::= symbol
        | (and TYPE...)
        | (not TYPE)
        | (diff TYPE TYPE)
-       | (function ARGS TYPE)
-       | (function ARGS (:guard TYPE [RET]))
-       | (function ARGS (:guard! TYPE [RET]))
-       | (function ARGS (:assert TYPE))
-       | (if PRED TYPE TYPE)
+       | (function ARGS RETTYPE)
        | (integer LOW HIGH)
        | (float LOW HIGH)
        | (real LOW HIGH)
        | (number LOW HIGH)
        | (list TYPE)
        | (list+ TYPE)
+       | (array TYPE)
        | (vector TYPE)
        | (sequence TYPE)
        | (cons TYPE TYPE)
@@ -96,9 +93,22 @@ TYPE ::= symbol
        | (benevolent TYPE)
        | (rx RX-EXPR)
        | (value-of TUPLE)
-       | (var SYMBOL)
+       | (var 'SYMBOL)
        | (plist-key-of PLIST)
        | (plist-value-of PLIST)
+
+;; Return-position types. RETTYPE forms are valid ONLY as the return
+;; slot of a function type, never as a general TYPE (so `(list (if ...))`
+;; or `(or (:guard ...) ...)` are not allowed). See type-level-evaluation.md.
+RETTYPE ::= TYPE
+          | (:guard TYPE [RET])
+          | (:guard! TYPE [RET])
+          | (:assert TYPE)
+          | (if PRED RETTYPE RETTYPE)
+
+;; RET is an optional return-value type for the true branch of a guard
+;; (e.g. a `bound-and-true-p`-style helper); it defaults to boolean.
+;; See type-level-evaluation.md.
 
 ARGS ::= (ARGSPEC...)
 
@@ -110,11 +120,25 @@ ARGSPEC ::= TYPE
 KEYSPEC ::= (:plist-of ENTRY...)
           | TYPE
 
-LOW  ::= * | NUMBER | (NUMBER)
-HIGH ::= * | NUMBER | (NUMBER)
+LOW  ::= * | BOUND | (BOUND)
+HIGH ::= * | BOUND | (BOUND)
+
+BOUND ::= NUMBER | NAMED-LIMIT
+NAMED-LIMIT ::= most-negative-fixnum | most-positive-fixnum
+              | most-negative-float | most-positive-float
+
+;; NUMBER is any Emacs integer or float literal, including radix forms such
+;; as #x3FFFFF. A NAMED-LIMIT is one of the listed Emacs limit constants,
+;; allowed as a convenience (e.g. for the fixnum range). A bound wrapped in
+;; a list, e.g. (BOUND), is exclusive.
 
 ENTRY ::= (KEY TYPE)
        | (:? KEY TYPE)
+
+KEY ::= keyword | symbol | string | NUMBER
+
+;; PRED is an s-expression in the restricted predicate language used by
+;; conditional return types; it is defined in type-level-evaluation.md.
 ```
 
 `(:tuple ...)` is the preferred tuple form because it avoids clashes with
@@ -128,10 +152,11 @@ notation.
 
 ### Common `cl-typep` names
 
-`t`, `nil`, `null`, `never`, `atom`, `cons`, `list`, `vector`, `sequence`,
-`symbol`, `keyword`, `boolean`/`bool`, `integer`/`int`, `float`,
-`real`, `number`, `character`, `string`, `hash-table`, `function`,
-`marker`, `integer-or-marker`, `number-or-marker`, `hook`
+`t`, `nil`, `null`, `never`, `atom`, `cons`, `list`, `vector`, `array`,
+`sequence`, `symbol`, `keyword`, `boolean`/`bool`, `integer`/`int`,
+`fixnum`, `bignum`, `float`, `real`, `number`, `character`, `string`,
+`record`, `char-table`, `bool-vector`, `hash-table`, `marker`,
+`integer-or-marker`, `number-or-marker`, `process`, `hook`, `function`
 
 Common numeric shorthand (recommended):
 
@@ -175,7 +200,20 @@ Notes:
 - `never` is the empty/bottom type: it has no inhabitants.
 - `atom` means any non-cons value; it is equivalent to `(not cons)`.
 - `boolean`/`bool` is the set `{t, nil}`.
-- `character` corresponds to `(integer 0 (max-char))`, i.e. 0..4194304.
+- `fixnum` is an integer in the fixnum range, i.e.
+  `(integer most-negative-fixnum most-positive-fixnum)`; it is a subtype
+  of `integer`.
+- `bignum` is an integer outside the fixnum range; it is a subtype of
+  `integer` and disjoint from `fixnum`. `integer` is `(or fixnum bignum)`.
+- `character` corresponds to `(integer 0 #x3FFFFF)`, i.e. character codes
+  from 0 to `(max-char)` (4194303). It is a subtype of `fixnum`.
+- `array` is a fixed-length sequence: the union of `string`, `vector`,
+  `char-table`, and `bool-vector`. `vector` is a subtype of `array`, and
+  `array` is a subtype of `sequence`.
+- `record` is an Emacs record object (`recordp`); `cl-defstruct` instances
+  are records. `(:class CLASS)` is the EIEIO-aware refinement of `record`.
+- `marker` and `process` are the corresponding Emacs object types
+  (`markerp`, `processp`).
 
 Example usage:
 
@@ -245,6 +283,10 @@ the return is `nil` (or `boolean` if RET is omitted).
   from `unknown`: `unknown` can be refined via guards, while `void`
   should not be consumed or cast.
 
+`void` is valid **only as a function return type**. It must not appear as an
+argument type, inside a container or tuple, or as a member of `or`/`and`. A
+checker should reject `void` in any non-return position.
+
 Example usage:
 
 ```emacs-lisp
@@ -259,8 +301,8 @@ Typespec recognizes several ways to define “a type”:
   `stringp`. This also covers EIEIO classes via `(:class CLASS)` and
   user-defined predicates via `:guard`/`:guard!` (e.g. `jp-postal-code-p`).
 - Structure-defined types: shapes such as `(:tuple ...)`, `(:alist K V)`,
-  `(:plist K V)`, `(:plist-of ...)`, `list`, `vector`, `sequence`, `cons`,
-  and `hash-table`.
+  `(:plist K V)`, `(:plist-of ...)`, `list`, `vector`, `array`, `sequence`,
+  `cons`, and `hash-table`.
 - Logical types: `(or ...)`, `(and ...)`, `(not ...)`, and `(diff ...)`.
 - Utility/meta types: `(const ...)`, `(rx ...)`, `(generalize ...)`,
   `(generalize-signed ...)`, `(downcast ...)`, `(benevolent ...)`,
@@ -310,6 +352,12 @@ checkers when no more specific plist shape is provided. It is not a language
 guarantee; implementations may allow configuration, but callers should not
 rely on a custom default in type declarations.
 
+Each marker may appear at most once, in the order above. `&rest` and `&keys`
+may co-occur (as in `cl-defun` with `&rest` and `&key`): `&rest` then types
+the raw tail as a list, while `&keys` gives the interpreted plist view of that
+same tail. Most signatures use only one of the two; prefer `&keys` when the
+tail is consumed as keyword arguments.
+
 ### Variance (Subtyping)
 
 For function types, parameter types are **contravariant** and return types
@@ -349,6 +397,178 @@ contravariant when present, and additional keys in the subtype are allowed
 only if the supertype permits them (e.g. via a broader plist type).
 Implementations may conservatively fall back to invariance here.
 
+## Subtyping and Assignability
+
+This section defines the general subtype relation `S <: T` ("a value of type
+`S` is assignable wherever `T` is expected"). Function variance (above) is a
+special case of these rules.
+
+The relation is **reflexive** (`T <: T`) and **transitive** (if `A <: B` and
+`B <: C` then `A <: C`).
+
+### Top, bottom, and the escape hatch
+
+- `never <: T` for every `T`; `never` is the bottom type.
+- `T <: unknown` for every `T`; `unknown` is the top type. The converse
+  `unknown <: T` holds **only** when `T` is `unknown` (or `mixed`): `unknown`
+  is not implicitly accepted elsewhere and must be refined first.
+- `mixed` is the escape hatch: both `mixed <: T` and `T <: mixed` hold for
+  every `T`. This is intentionally unsound and exists for pass-through code.
+- `t` is the `cl-typep` universal type and behaves like `mixed`.
+- `void` is **outside** the relation: it is neither a subtype nor a supertype
+  of ordinary types, and a value of type `void` must not be assigned to or
+  consumed (see the Void section). A checker treats any such use as an error.
+
+### Constants and singletons
+
+- `(const v) <: T` iff the value `v` is an inhabitant of `T`.
+- `(const v1) <: (const v2)` iff `v1` and `v2` are equal (see
+  *Normalization and Equivalence* for the equality predicate).
+- `nil` is `(const nil)`; `null` is an alias of `nil`.
+
+### Numbers
+
+- `fixnum <: integer`, `bignum <: integer`, and `integer` ≡ `(or fixnum bignum)`.
+- `character <: fixnum`.
+- `integer` and `float` are **disjoint**. In Emacs both `real` and `number`
+  denote `(or integer float)`, so `integer <: number` and `float <: number`.
+- For range constructors, `(integer a b) <: (integer c d)` iff the closed/open
+  interval `[a,b]` is contained in `[c,d]`, where `*` is treated as ±∞ and a
+  bound written `(n)` is exclusive. The same holds for `float`/`real`/`number`
+  over their domains.
+- `(integer n n)` ≡ `(const n)`.
+
+### Unions and intersections
+
+- `(or A1 ... An) <: T` iff every `Ai <: T`.
+- `S <: (or B1 ... Bn)` holds if `S <: Bi` for some `i`. This is sound but not
+  always complete for unions of overlapping members; checkers may use a more
+  precise rule when they can compute it.
+- `S <: (and B1 ... Bn)` iff `S <: Bi` for every `i`.
+- `(and A1 ... An) <: T` holds if `Ai <: T` for some `i`.
+
+### Complement and difference
+
+- `(not T)` ≡ `(diff mixed T)`; `(diff A B)` is "values in `A` not in `B`", and
+  `(diff A B) <: A` always holds.
+- `S <: (not T)` holds when `S` and `T` are disjoint. Exact disjointness is not
+  decidable in general; checkers should use a sound, conservative
+  approximation and fall back to "cannot prove" rather than guessing.
+
+### Containers (invariant by default)
+
+Element types are **invariant** by default for the mutable containers `list`,
+`list+`, `vector`, `array`, `sequence`, `cons`, `hash-table`, `:alist`,
+`:plist`, and `:tuple`, because mutation breaks covariant assumptions. So
+`(list A) <: (list B)` requires `A ≡ B`. Tools that reason only about
+read-only positions may treat elements covariantly, but invariance is the
+default.
+
+The relations between container **kinds** (with the same element type) hold
+regardless of the variance choice:
+
+- `(vector T) <: (array T) <: (sequence T)`
+- `(list T) <: (sequence T)`
+- `string <: (array character) <: (sequence character)`
+- `(list+ T) <: (list T)` and `(list+ T)` ≡ `(cons T (list T))`
+
+### Tuples
+
+- `(:tuple A1 ... An) <: (:tuple B1 ... Bn)` iff the lengths are equal and
+  `Ai ≡ Bi` for each `i` (invariant by default, as for other containers).
+- `(:tuple A1 ... An) <: (list T)` iff each `Ai <: T`; equivalently the tuple
+  is a subtype of `(list (or A1 ... An))`.
+- `(:tuple A1 ... An . R)` ≡ `(cons A1 (cons ... (cons An R)))`, and subtyping
+  follows that cons-chain expansion.
+- `(:tuple)` ≡ `(const nil)`.
+
+### Sealed plists (`:plist-of`)
+
+`:plist-of` shapes are sealed (closed) by default. For two sealed shapes,
+`S <: T` when:
+
+- every **required** key of `T` is present in `S` (as required) with
+  invariant value type;
+- every **optional** key of `T` is, when present in `S`, invariant in value
+  type, and may be absent from `S`;
+- `S` introduces no key that is absent from `T` (sealed width).
+
+A sealed `(:plist-of ...)` is a subtype of the open `(:plist K V)` when every
+key literal inhabits `K` and every value type is a subtype of `V`. For `&keys`
+function parameters, the variance rules in the Function Types section apply
+instead of the data-value rules here.
+
+### Functions
+
+See *Variance (Subtyping)* under Function Types: parameters are contravariant
+and return types are covariant.
+
+### Decidability
+
+Exact subtyping over `not`, `diff`, and overlapping unions is not fully
+decidable. Implementations should keep the relation **sound** — never report
+`S <: T` unless it holds — and may answer "cannot prove" (treated as not a
+subtype) when a precise decision is out of reach.
+
+## Normalization and Equivalence
+
+Two types are **equivalent**, written `T1 ≡ T2`, when each is a subtype of the
+other. Before comparing types, a checker may normalize them. The rules below
+are the recommended normal form; implementations should apply them explicitly
+rather than relying on implicit reductions.
+
+### Identity and absorbing elements
+
+- `(or)` ≡ `never`; `(and)` ≡ `t` (the universal type).
+- `(or T)` ≡ `T`; `(and T)` ≡ `T`.
+- In `or`, `never` is the identity element (drop it); if any member is a top
+  type (`t`/`mixed`/`unknown`) the whole union collapses to that top.
+- In `and`, `t`/`mixed` is the identity element (drop it); if any member is
+  `never` the whole intersection collapses to `never`.
+- When a complement is exact, `(or T (not T))` ≡ `t` and `(and T (not T))` ≡
+  `never`.
+
+### Flattening and de-duplication
+
+- Nested same-combinator forms flatten: `(or A (or B C))` ≡ `(or A B C)`; the
+  same applies to `and`.
+- Equivalent members are de-duplicated.
+
+### Constant equality
+
+Two constant types are equal exactly when their values are `equal`:
+`(const v1)` ≡ `(const v2)` iff `(equal v1 v2)`. Consequently
+`(const 1)` and `(const 1.0)` are **distinct** (`equal` returns nil across
+integer and float), while `(const "a")` ≡ `(const "a")`. Floating-point `NaN`
+is not `equal` to itself; `(const NaN)` should be treated as a degenerate
+constant whose equivalence is implementation-defined.
+
+### Range normalization
+
+- `(integer n n)` ≡ `(const n)`.
+- A range whose lower bound exceeds its upper bound (e.g. `(integer 5 1)`) ≡
+  `never`.
+- `(integer * *)` ≡ `integer`; likewise for `float`/`real`/`number`.
+- Adjacent or overlapping **integer** ranges in a union may be merged, e.g.
+  `(or (integer 0 4) (integer 5 9))` ≡ `(integer 0 9)`. Float ranges are not
+  merged this way.
+
+### Structural normalization
+
+- `(:tuple)` ≡ `(const nil)`.
+- `(:tuple A1 ... An . R)` ≡ its cons-chain expansion.
+- `(list+ T)` ≡ `(cons T (list T))`.
+- `(not (not T))` ≡ `T`; `(not never)` ≡ `t`; `(not t)` ≡ `(not mixed)` ≡
+  `never`.
+- `(diff A A)` ≡ `never`; `(diff A B)` ≡ `A` when `A` and `B` are disjoint.
+
+### Containers holding `never`
+
+Container types are **not** auto-reduced when an element type is `never` (see
+the note in Base Types). For example `(list never)` is inhabited only by the
+empty list and so equals `(const nil)`, which is **not** `never`. An
+implementation may perform such a simplification, but only explicitly.
+
 ## Polymorphism (Conceptual)
 
 Typespec provides parametric polymorphism via `:forall`. This is the primary
@@ -372,6 +592,13 @@ is defined in `type-level-evaluation.md`.
 - `&args` — tuple of all argument value types
 - `&rest` — tuple of the variadic portion, when applicable
 
+Note the **position-dependent** meaning of `&rest`: in an argument list
+(`ARGSPEC`) `&rest TYPE` declares the variadic parameter, whereas in a return
+type or other meta position (`value-of`, conditional predicates) `&rest` and
+`&args` denote the actual-argument tuples described here. The two uses never
+overlap because one appears only in `ARGS` and the other only in `RETTYPE`-side
+positions.
+
 `(value-of (:tuple T1 T2 ...))` is defined as `(or T1 T2 ...)`.
 This allows types like `or` to describe “returns one of its arguments”
 without naming each argument. Use `value-of` when you want to treat a
@@ -381,8 +608,8 @@ If a proper list is supplied, it is treated as `(:tuple ...)` for this
 purpose. For dotted tuples, `value-of` includes the tail type as an additional
 union member (e.g., `(:tuple a b . c)` => `(or a b c)`).
 
-When combined with `(var SYMBOL)`, a type checker should first resolve
-`(var SYMBOL)` to its concrete type (for example, a tuple for a `defconst`
+When combined with `(var 'SYMBOL)`, a type checker should first resolve
+`(var 'SYMBOL)` to its concrete type (for example, a tuple for a `defconst`
 list) and then apply `value-of` to that expanded type.
 
 Example (two-argument `or`):
@@ -528,7 +755,14 @@ is allowed, but for type usage it is recommended to anchor the whole string, for
 (rx string-start (+ (any "0-9")) string-end)
 ```
 
-Non-string values never match; `(rx ...)` is a string subtype.
+Matching semantics: a string `s` inhabits `(rx R)` when `R` matches **somewhere
+in** `s`, i.e. `string-match-p` semantics, **not** an implicit whole-string
+match. Without explicit anchors, `(rx (+ (any "0-9")))` therefore accepts any
+string that merely *contains* a digit (e.g. `"abc1"`). Because a type should
+usually describe the full set of valid strings, anchor with `string-start` /
+`string-end` whenever you mean "the entire string matches".
+
+Non-string values never match; `(rx ...)` is a `string` subtype.
 
 Example: Japanese postal codes with a leading "〒" and no spaces:
 
@@ -577,10 +811,11 @@ Example usage:
 
 ### Variable types (`var`) and constant values
 
-`(var SYMBOL)` refers to the type of a Lisp variable by name.
-It is intended for **globally defined** variables (`defconst`, `defcustom`,
-or other global `defvar`-style bindings). It does **not** refer to lexical
-or dynamically bound local variables.
+`(var 'SYMBOL)` refers to the type of a Lisp variable by name. The symbol is
+written quoted (e.g. `(var 'orders)`) to make clear it names a variable rather
+than a type. It is intended for **globally defined** variables (`defconst`,
+`defcustom`, or other global `defvar`-style bindings). It does **not** refer to
+lexical or dynamically bound local variables.
 
 - For `defconst` values, the variable is treated as a constant; a list
   of symbols is treated as a tuple of `const` values.
@@ -702,10 +937,20 @@ to mark an optional key.
 When a key is optional, its value type is treated as `(or (const nil) TYPE)`
 for plist helpers like `plist-get`/`plist-value-of`.
 
+`(:plist-of ...)` describes a **sealed** (closed) shape by default: a value
+must contain every required key and may contain only the keys listed (required
+or optional). Extra, unlisted keys make it not an inhabitant. When a plist may
+carry additional, unspecified keys, model it with the **open** form
+`(:plist K V)` instead (optionally intersected with a `:plist-of` for the keys
+you do know). Duplicate keys in a `:plist-of` form are not allowed; the first
+binding wins if a tool encounters them.
+
 ## Container Types
 
 - `(list T)` — homogeneous list of `T`
 - `(vector T)` — homogeneous vector of `T`
+- `(array T)` — homogeneous array of `T` (string, vector, char-table, or
+  bool-vector)
 - `(sequence T)` — homogeneous sequence of `T`
 - `(cons A B)` — cons cell with `car` of `A` and `cdr` of `B`
 - `(hash-table K V)` — hash table mapping `K` to `V`
@@ -737,11 +982,12 @@ They are not part of the core syntax, but are useful for integration:
   declared function type specifiers (see `comp-function-type-spec`).
 
 Note: `string` is a sequence and can be treated as a sequence of
-character codes, i.e. `(sequence (fixnum 0 most-positive-fixnum))`.
-This is a **structural view** that is useful for sequence-processing
-code; it does not change the fact that `string` is also a distinct
-base type. Therefore, `(sequence integer)` **does include** strings,
-because strings are arrays whose elements are character codes.
+character codes, i.e. `(sequence character)` (equivalently
+`(sequence (integer 0 #x3FFFFF))`). This is a **structural view** that is
+useful for sequence-processing code; it does not change the fact that
+`string` is also a distinct base type. Therefore, `(sequence integer)`
+**does include** strings, because strings are arrays whose elements are
+character codes.
 
 ### Sequences, Arrays, and Vectors
 
@@ -751,9 +997,9 @@ In Emacs Lisp, **sequence** is the union of **list** and **array**.
 - **array**: fixed-length; includes strings, vectors, char-tables, and bool-vectors.
 - **vector**: a kind of array.
 
-Therefore, `(sequence T)` should be read as “either `(list T)` or an array of `T`”.
-When element type matters for arrays, use `(vector T)` or a more specific array
-type once it is introduced.
+Therefore, `(sequence T)` should be read as “either `(list T)` or `(array T)`”.
+When the element type matters but the array kind does not, use `(array T)`; for
+a specific kind use `(vector T)` (or `string`, which is `(array character)`).
 
 Example usage:
 
@@ -798,17 +1044,21 @@ Example usage:
 
 `(const VALUE)` is the type with exactly that value.
 
-Optional shorthand (Elsa-style):
+Optional shorthand (Elsa-style), restricted to **self-evaluating literals**:
 
 - `"foo"` is shorthand for `(const "foo")`
 - `1` is shorthand for `(const 1)`
-- `sym` is shorthand for `(const sym)`
+- `1.5` is shorthand for `(const 1.5)`
 
-Shorthands are convenient but can conflict with `cl-typep`’s atom usage.
-Use `(const ...)` in ambiguous contexts. Type checkers should interpret
-bare symbols as **types**, not literal constants. That means `string`
-refers to the `string` type, while `(const string)` refers to the literal
-symbol `string`.
+There is intentionally **no bare-symbol shorthand**. A bare symbol is always
+interpreted as a **type**, never as a literal constant: `string` refers to
+the `string` type, while the literal symbol `string` must be written
+`(const string)`. (This also applies to `t` and `nil`, which are types, not
+`(const t)`/`(const nil)`.) Allowing `sym` to mean `(const sym)` would clash
+with type names, so it is excluded.
+
+The string/number shorthands are convenient but can still conflict with
+`cl-typep`'s atom usage; use `(const ...)` explicitly in ambiguous contexts.
 
 ## Nullable Types
 
