@@ -221,6 +221,7 @@ A fixnum range is \\=(integer \\='most-negative-fixnum \\='most-positive-fixnum)
 (defconst typespec-eval-types--elisp-type-hierarchy-alist
   '((boolean null)
     (integer fixnum bignum)
+    (fixnum character)
     (accessor oclosure-accessor)
     (cl--class cl-structure-class oclosure--class built-in-class)
     (vector timer)

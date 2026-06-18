@@ -45,16 +45,16 @@ file; the link in `typespec.md` points at the upstream Emacs source only).
 | `marker`, `integer-or-marker`, `number-or-marker` placement | ✅ |
 | `hook <: list <: sequence` | ✅ |
 | Container **kind** relations (`vector <: array <: sequence`, `list <: sequence`) | ✅ |
-| `never` is bottom (`never <: T`) | ⚠ |
-| `mixed`/`t` are bidirectional (assignable *from* as well as *to*) | ⚠ |
-| `character <: fixnum` | ✗ |
-| Range containment (`(integer a b) <: (integer c d)`) | ⚠ |
-| Container element types compared (invariant) | ⚠ |
-| `(list+ T) <: (list T)` only (not the reverse) | ⚠ |
-| `fixnum`/`bignum` disjoint | ⚠ |
-| Function variance (params contravariant, return covariant) | ⚠ |
-| `(or A1…An) <: T` iff every `Ai <: T` (value-side union) | ⚠ |
-| `(const v) <: T` iff `v` inhabits `T` (not just `T`'s category) | ⚠ |
+| `never` is bottom (`never <: T`) | ✅ |
+| `mixed`/`t` are bidirectional (assignable *from* as well as *to*) | ✅ |
+| `character <: fixnum` | ✅ |
+| Range containment (`(integer a b) <: (integer c d)`) | ✅ |
+| Container element types compared (invariant) | ✅ |
+| `(list+ T) <: (list T)` only (not the reverse) | ✅ |
+| Function variance (params contravariant, return covariant) | ✅ |
+| `(or A1…An) <: T` iff every `Ai <: T` (value-side union) | ✅ |
+| `(const v) <: T` iff `v` inhabits `T` (range/bounds checked) | ✅ |
+| `fixnum`/`bignum` disjoint | ◑ — `integer <: fixnum` is now correctly rejected, but `bignum` is modeled as unbounded integer, so `fixnum <: bignum` is still accepted |
 
 ## Normalization and equivalence
 
@@ -116,30 +116,33 @@ Implemented in `typespec-eval-struct.el`, `typespec-eval-var.el`, and
 | `(var 'SYM)` (`defconst` ⇒ const/tuple; `defcustom` ⇒ declared `:type`; else left as `(var 'SYM)`) | ✅ |
 | `(:tuple)` / dotted-tuple / `list+` / `:alist` rewritten to equivalents | ✗ (opt-in; semantics honored, surface form preserved) |
 
-## Known soundness bugs (the code should change; the spec is correct)
+## Soundness fixes (resolved)
 
-These cases violate the soundness requirement in `typespec.md` (§ Subtyping →
-Decidability). The evaluator's coarse category collapse accepts assignments
-that do not hold:
+The following unsoundness in `typespec-eval-call--type-compatible-p` has been
+fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 
-1. **`never` is not treated as the bottom type.** A `never`-typed value is
-   rejected against any concrete parameter type. It should be accepted.
-2. **`mixed`/`t` are accepted only on the *expected* side.** A value typed
-   `mixed`/`t` cannot be passed to a typed parameter, breaking pass-through code.
-3. **Range bounds are never consulted.** Both `(integer 0 10) <: (integer 2 5)`
-   and `(const 50) <: (integer 0 10)` are wrongly accepted.
-4. **Container element types are ignored.** `(vector fixnum)` and
-   `(vector integer)` are mutually assignable in both directions.
-5. **`(list T) <: (list+ T)` is wrongly accepted** (a possibly-empty list is
-   not a non-empty list).
-6. **`fixnum` and `bignum` are not disjoint** (both collapse to `integer`).
-7. **`character` is missing from the hierarchy** (`character <: fixnum` fails).
-8. **Function types are compared by category only**, so even the
-   spec's deliberately-false variance examples are accepted.
-9. **Value-side `(or …)` is not decomposed**, so `(or integer string) <: integer`
-   is wrongly accepted.
-10. **The two-slot guard form silently degrades to `unknown`** instead of being
-    recognized or rejected.
+1. **`never` is now the bottom type** — assignable to any parameter.
+2. **`mixed`/`t` values are assignable anywhere** (escape hatch / universal).
+3. **Numeric range bounds are consulted** — `(integer 0 10)` is rejected where
+   `(integer 2 5)` is required, and `(const 50)` where `(integer 0 10)` is.
+4. **Container element types are invariant** — `(vector fixnum)` and
+   `(vector integer)` no longer interchange.
+5. **`(list T) <: (list+ T)` is rejected** (a possibly-empty list is not a
+   non-empty list); `(list+ T) <: (list T)` still holds.
+6. **`character` is in the hierarchy** as a subtype of `fixnum`.
+7. **Function types use variance** — contravariant parameters, covariant
+   return (simple positional signatures), with invariance as a sound fallback.
+8. **Value-side `(or …)` is decomposed** — every member must be compatible.
+9. **`(const v)` inhabitance honors range bounds**, not just the category.
+
+### Remaining
+
+- **`fixnum`/`bignum` disjointness is partial.** `integer <: fixnum` is now
+  correctly rejected, but `integer-range-from` models `bignum` as an unbounded
+  integer range, so `fixnum <: bignum` is still accepted. A precise fix needs a
+  representation for "integers outside the fixnum range".
+- **The two-slot guard form `(:guard T RET)` silently degrades to `unknown`** —
+  see *Spec features not yet implemented* below.
 
 ## Spec features not yet implemented
 

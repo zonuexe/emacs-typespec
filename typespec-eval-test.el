@@ -146,6 +146,47 @@
                                          (list child))
                      `(:cause-error (wrong-type-argument ,parent ,child)))))))
 
+(ert-deftest typespec-eval-call-soundness ()
+  "Regression tests for subtype/compatibility soundness fixes."
+  (cl-flet ((ok (fn args) (typespec-eval-call fn args))
+            (rejected (fn args)
+              (eq (car-safe (typespec-eval-call fn args)) :cause-error)))
+    ;; `never' is the bottom type: assignable anywhere.
+    (should (equal (ok '(function (integer) (const t)) '(never)) '(const t)))
+    ;; `mixed'/`t' values are the escape hatch.
+    (should (equal (ok '(function (integer) (const t)) '(mixed)) '(const t)))
+    (should (equal (ok '(function (string) (const t)) '(t)) '(const t)))
+    ;; Value-side union: every member must fit.
+    (should (equal (ok '(function ((or integer string)) (const t)) '(integer))
+                   '(const t)))
+    (should (rejected '(function (integer) (const t)) '((or integer string))))
+    ;; Integer range containment.
+    (should (equal (ok '(function ((integer 0 10)) (const t)) '((integer 2 5)))
+                   '(const t)))
+    (should (rejected '(function ((integer 2 5)) (const t)) '((integer 0 10))))
+    ;; Constant within / outside a range.
+    (should (equal (ok '(function ((integer 0 10)) (const t)) '(5)) '(const t)))
+    (should (rejected '(function ((integer 0 10)) (const t)) '(50)))
+    ;; `character' is a subtype of `fixnum'; plain `integer' is not.
+    (should (equal (ok '(function (fixnum) (const t)) '(character)) '(const t)))
+    (should (rejected '(function (fixnum) (const t)) '(integer)))
+    ;; Function variance: contravariant params, covariant return.
+    (should (equal (ok '(function ((function (string) integer)) (const t))
+                       '((function (unknown) integer)))
+                   '(const t)))
+    (should (rejected '(function ((function (unknown) integer)) (const t))
+                      '((function (string) integer))))
+    (should (rejected '(function ((function (integer) integer)) (const t))
+                      '((function (integer) (or integer string)))))
+    ;; Container element types are invariant by default.
+    (should (equal (ok '(function ((vector integer)) (const t)) '((vector integer)))
+                   '(const t)))
+    (should (rejected '(function ((vector integer)) (const t)) '((vector fixnum))))
+    ;; A possibly-empty list is not assignable where a non-empty list is required.
+    (should (rejected '(function ((list+ integer)) (const t)) '((list integer))))
+    (should (equal (ok '(function ((list+ integer)) (const t)) '((list+ integer)))
+                   '(const t)))))
+
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))
                  '(const t)))

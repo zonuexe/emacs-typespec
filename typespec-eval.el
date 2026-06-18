@@ -642,15 +642,104 @@
           :rest rest-type
           :keys keys-type)))
 
+(defun typespec-eval-call--num-low-contained-p (s p)
+  "Non-nil if range info S's lower end lies within P's lower end.
+S and P are plists from `typespec-eval-numeric-numeric-range-info'."
+  (let ((sl (plist-get s :low)) (se (plist-get s :low-excl))
+        (pl (plist-get p :low)) (pe (plist-get p :low-excl)))
+    (cond
+     ((null pl) t)            ; P is unbounded below
+     ((null sl) nil)          ; S is unbounded below, P is not
+     ((> sl pl) t)
+     ((< sl pl) nil)
+     (t (or se (not pe))))))  ; equal endpoints: ok unless P is open and S closed
+
+(defun typespec-eval-call--num-high-contained-p (s p)
+  "Non-nil if range info S's upper end lies within P's upper end."
+  (let ((sh (plist-get s :high)) (se (plist-get s :high-excl))
+        (ph (plist-get p :high)) (pe (plist-get p :high-excl)))
+    (cond
+     ((null ph) t)
+     ((null sh) nil)
+     ((< sh ph) t)
+     ((> sh ph) nil)
+     (t (or se (not pe))))))
+
+(defun typespec-eval-call--numeric-subtype-p (sub super)
+  "Non-nil if numeric type SUB is contained in numeric type SUPER.
+Honors range bounds (inclusive/exclusive) and the integer/float/number
+kind relation; `integer' and `float' do not flow into each other."
+  (let ((s (typespec-eval-numeric-numeric-range-info sub))
+        (p (typespec-eval-numeric-numeric-range-info super)))
+    (and s p
+         (let ((st (plist-get s :type)) (pt (plist-get p :type)))
+           (or (memq pt '(number real)) (eq st pt)))
+         (typespec-eval-call--num-low-contained-p s p)
+         (typespec-eval-call--num-high-contained-p s p))))
+
+(defun typespec-eval-call--function-marker-p (spec)
+  "Non-nil if SPEC is a function argument-list marker."
+  (memq spec '(&optional &rest &keys &key &allow-other-keys)))
+
+(defun typespec-eval-call--simple-function-type-p (ftype)
+  "Non-nil if FTYPE is a positional function type with no markers or guard return."
+  (let ((args (nth 1 ftype)) (ret (nth 2 ftype)))
+    (and (listp args)
+         (not (seq-some #'typespec-eval-call--function-marker-p args))
+         (not (and (consp ret)
+                   (memq (car ret) '(:guard :guard! :assert if)))))))
+
+(defun typespec-eval-call--function-subtype-p (sub super)
+  "Non-nil if function type SUB is a subtype of SUPER.
+Parameters are contravariant and the return type is covariant for simple
+positional signatures; complex signatures fall back to invariance."
+  (if (and (typespec-eval-call--simple-function-type-p sub)
+           (typespec-eval-call--simple-function-type-p super))
+      (let ((sub-args (nth 1 sub)) (sub-ret (nth 2 sub))
+            (super-args (nth 1 super)) (super-ret (nth 2 super)))
+        (and (= (length sub-args) (length super-args))
+             (cl-every (lambda (sa pa)
+                         ;; contravariant: SUPER's param must be assignable to SUB's
+                         (typespec-eval-call--type-compatible-p pa sa))
+                       sub-args super-args)
+             ;; covariant: SUB's return must be assignable to SUPER's
+             (typespec-eval-call--type-compatible-p sub-ret super-ret)))
+    (equal sub super)))
+
+(defun typespec-eval-call--invariant-elements-p (sub-elems super-elems)
+  "Non-nil if element type lists SUB-ELEMS and SUPER-ELEMS are equivalent."
+  (and (= (length sub-elems) (length super-elems))
+       (cl-every (lambda (s p)
+                   (and (typespec-eval-call--type-compatible-p s p)
+                        (typespec-eval-call--type-compatible-p p s)))
+                 sub-elems super-elems)))
+
 (defun typespec-eval-call--type-compatible-p (value expected)
-  "Return non-nil if VALUE is compatible with EXPECTED."
+  "Return non-nil if VALUE is assignable where EXPECTED is required."
   (let ((value (typespec-eval--eval value))
         (expected (typespec-eval--eval expected)))
     (cond
+     ;; Top types on the expected side accept anything.
      ((memq expected '(mixed unknown t)) t)
+     ;; `mixed'/`t' values are the escape hatch: assignable anywhere.
+     ((memq value '(mixed t)) t)
+     ;; `never' is the bottom type: assignable to anything.
+     ((eq value 'never) t)
+     ;; Structural identity.
+     ((equal value expected) t)
+     ;; Value-side union: every member must be compatible.
+     ((and (consp value) (eq (car value) 'or))
+      (seq-every-p (lambda (item)
+                     (typespec-eval-call--type-compatible-p item expected))
+                   (cdr value)))
+     ;; Numeric types: precise range/kind containment.
+     ((and (typespec-eval-numeric-numeric-range-info value)
+           (typespec-eval-numeric-numeric-range-info expected))
+      (typespec-eval-call--numeric-subtype-p value expected))
+     ;; Symbol vs symbol: elisp/category hierarchy.
      ((and (symbolp value) (symbolp expected))
       (typespec-eval-types-type-subtype-p value expected))
-     ((equal value expected) t)
+     ;; Constant value vs a non-numeric expected type.
      ((typespec-eval--const-p value)
       (let* ((val (typespec-eval--const-value value))
              (cat (typespec-eval-types-type-category-with-guard expected)))
@@ -664,6 +753,20 @@
           ('vector (vectorp val))
           ('boolean (memq val '(t nil)))
           (_ nil))))
+     ;; Function types: contravariant parameters, covariant return.
+     ((and (typespec-eval-types-function-type-p value)
+           (typespec-eval-types-function-type-p expected))
+      (typespec-eval-call--function-subtype-p value expected))
+     ;; Non-empty list expected: a possibly-empty list is not assignable.
+     ((and (consp expected) (eq (car expected) 'list+))
+      (and (consp value) (eq (car value) 'list+)
+           (typespec-eval-call--invariant-elements-p (cdr value) (cdr expected))))
+     ;; Homogeneous containers: element types are invariant by default.
+     ((and (consp value) (consp expected)
+           (eq (car value) (car expected))
+           (memq (car expected) '(list vector array sequence)))
+      (typespec-eval-call--invariant-elements-p (cdr value) (cdr expected)))
+     ;; Expected-side union / intersection.
      ((and (consp expected) (eq (car expected) 'or))
       (seq-some (lambda (item)
                   (typespec-eval-call--type-compatible-p value item))

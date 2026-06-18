@@ -517,9 +517,10 @@ decidable. Implementations should keep the relation **sound** — never report
 `S <: T` unless it holds — and may answer "cannot prove" (treated as not a
 subtype) when a precise decision is out of reach.
 
-The bundled `typespec-eval` evaluator currently approximates subtyping with a
-coarse type-category check; it does not yet consult range bounds, container
-element types, or function variance, and a few cases are not yet sound. See
+The bundled `typespec-eval` evaluator checks numeric range containment,
+container-element invariance, and function variance, treating `never` as bottom
+and `mixed`/`t` as the escape hatch. A few coarse cases remain (e.g. `bignum`
+is modeled as an unbounded integer range). See
 [`conformance.md`](conformance.md) for the precise per-feature status.
 
 ## Normalization and Equivalence
