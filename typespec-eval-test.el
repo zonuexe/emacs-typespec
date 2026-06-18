@@ -99,7 +99,17 @@
   (should (equal (typespec-eval-call '(:forall (a) (function (a) a)) '("foo"))
                  '(const "foo")))
   (should (equal (typespec-eval-call '(:forall (a) (function (a) a)) '((or "foo" "bar")))
-                 '(or (const "foo") (const "bar")))))
+                 '(or (const "foo") (const "bar"))))
+  ;; Two-slot guard: the optional second slot is the true-branch return type.
+  (should (equal (typespec-eval-call '(function (symbol) (:guard t unknown)) '(symbol))
+                 'unknown))
+  (should (equal (typespec-eval-call '(function (unknown) (:guard string string)) '(string))
+                 'string))
+  (should (equal (typespec-eval-call '(function (unknown) (:guard! string string)) '(string))
+                 'string))
+  ;; Standalone evaluation preserves the two-slot form.
+  (should (equal (typespec-eval '(function (symbol) (:guard t unknown)))
+                 '(function (symbol) (:guard t unknown)))))
 
 (ert-deftest typespec-eval-call-allow-other-keys ()
   (should (equal (typespec-eval-call

@@ -853,8 +853,14 @@ TYPE-PRED is an optional predicate to check evaluated types."
       (pcase ret
         (`(:guard ,type)
          (list 'function argspecs (list :guard (typespec-eval--eval type))))
+        (`(:guard ,type ,rt)
+         (list 'function argspecs
+               (list :guard (typespec-eval--eval type) (typespec-eval--eval rt))))
         (`(:guard! ,type)
          (list 'function argspecs (list :guard! (typespec-eval--eval type))))
+        (`(:guard! ,type ,rt)
+         (list 'function argspecs
+               (list :guard! (typespec-eval--eval type) (typespec-eval--eval rt))))
         (`(:assert ,type)
          (list 'function argspecs (list :assert (typespec-eval--eval type))))
         (_

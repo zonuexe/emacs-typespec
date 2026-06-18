@@ -347,8 +347,8 @@ Returns the guard type if found, nil otherwise."
               (ret-type (and (eq (car-safe spec) 'function)
                              (nth 2 spec))))
     (pcase ret-type
-      (`(:guard ,type) type)
-      (`(:guard! ,type) type)
+      (`(:guard ,type . ,_) type)
+      (`(:guard! ,type . ,_) type)
       (_ nil))))
 
 (defun typespec-eval-types-guard-type-base (guard-type)

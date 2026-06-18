@@ -95,7 +95,7 @@ Implemented in `typespec-eval.el` (`typespec-eval-call`) and
 | `:forall` type-variable substitution at call sites | ✅ |
 | Argument-refinement effect of `:guard`/`:guard!`/`:assert` (first positional arg) | ⬚ checker-level |
 | `:guard!` false branch ⇒ `(not T)` (distinct from `:guard`) | ⬚/◑ — both currently collapse to `boolean` |
-| Optional second slot `(:guard T RET)` / `(:guard! T RET)` | ✗ — unrecognized; **silently degrades to `unknown`** |
+| Optional second slot `(:guard T RET)` / `(:guard! T RET)` | ✅ — RET is the true-branch return type (defaults to `boolean`) |
 | `if` PRED restricted to the allowed predicate whitelist; disallowed ones rejected | ✗ — no validation (sound `(or …)` fallback, but nothing is rejected) |
 | `(if …)`/`:guard`/`:guard!`/`:assert` valid only in the RETTYPE slot | ✗ — accepted in any position |
 | `&args` / `&rest` as meta-position actual-argument tuples | ✗ — absent from the implementation |
@@ -141,12 +141,9 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
   correctly rejected, but `integer-range-from` models `bignum` as an unbounded
   integer range, so `fixnum <: bignum` is still accepted. A precise fix needs a
   representation for "integers outside the fixnum range".
-- **The two-slot guard form `(:guard T RET)` silently degrades to `unknown`** —
-  see *Spec features not yet implemented* below.
 
 ## Spec features not yet implemented
 
-- Two-slot `(:guard T RET)` / `(:guard! T RET)` (return value on the true branch).
 - Argument-refinement effects of `:guard`/`:guard!`/`:assert` (checker-level).
 - `:guard!` false-branch complement (distinct behavior from `:guard`).
 - `&args` / `&rest` meta-position operands.
