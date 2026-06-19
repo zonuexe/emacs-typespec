@@ -763,14 +763,37 @@ Kind subtyping (e.g. list <: sequence) with invariant element types."
     (and (typespec-eval-call--container-kind-<= vk pk)
          (typespec-eval-call--invariant-elements-p (list ve) (list pe)))))
 
+(defun typespec-eval-call--dynamic-p (form)
+  "Return non-nil if FORM is (or contains) the gradual dynamic type `unknown'.
+
+`unknown' is the gradual dynamic — a not-yet-known value — NOT the top type.
+By the gradual consistency rule a union that *contains* the dynamic is itself
+dynamic: it might be a not-yet-known value, so it is consistent with every
+type and can never be a provable incompatibility.  Contrast with the top type
+`mixed'/`t' (the universal supertype); see ADR docs/adr/0001 and
+`typespec-eval-call--type-compatible-p'."
+  (or (eq form 'unknown)
+      (and (consp form) (eq (car form) 'or)
+           (seq-some #'typespec-eval-call--dynamic-p (cdr form)))))
+
 (defun typespec-eval-call--type-compatible-p (value expected)
   "Return non-nil if VALUE is assignable where EXPECTED is required."
   (let ((value (typespec-eval--eval value))
         (expected (typespec-eval--eval expected)))
     (cond
-     ;; Top types on the expected side accept anything.
-     ((memq expected '(mixed unknown t)) t)
-     ;; `mixed'/`t' values are the escape hatch: assignable anywhere.
+     ;; The gradual dynamic `unknown' is consistent with every type in BOTH
+     ;; directions (unsound by design): a not-yet-known VALUE is acceptable
+     ;; wherever any type is EXPECTED, and an `unknown' parameter accepts any
+     ;; argument.  We report only provable incompatibilities, so the dynamic —
+     ;; or any union that contains it — is never an error.
+     ((or (typespec-eval-call--dynamic-p expected)
+          (typespec-eval-call--dynamic-p value))
+      t)
+     ;; `mixed'/`t' is the top type: the universal supertype.  On the expected
+     ;; side it soundly accepts anything; on the value side it is retained as a
+     ;; deliberate (unsound) escape hatch.  See ADR docs/adr/0001 for why this
+     ;; value-side assignability is kept rather than tightened.
+     ((memq expected '(mixed t)) t)
      ((memq value '(mixed t)) t)
      ;; `never' is the bottom type: assignable to anything.
      ((eq value 'never) t)

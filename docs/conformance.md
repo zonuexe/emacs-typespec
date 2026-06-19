@@ -29,24 +29,30 @@ Legend:
 ## Subtyping / assignability
 
 Compatibility is decided by two category-driven functions:
-`typespec-eval-types-type-subtype-p` (`typespec-eval-types.el`) and
-`typespec-eval-call--type-compatible-p` (`typespec-eval.el`). Both collapse a
-type to one of ~15 coarse *categories* and accept when the categories match or
-are related by a small hand-coded lattice. The Emacs type hierarchy lives
-inline in `typespec-eval-types.el` (there is no `elisp_type_hierarchy.txt`
-file; the link in `typespec.md` points at the upstream Emacs source only).
+`typespec-eval-types-type-subtype-p` (`typespec-eval-types.el`, strict
+subtyping) and `typespec-eval-call--type-compatible-p` (`typespec-eval.el`,
+assignability / gradual consistency). Both collapse a type to one of ~15 coarse
+*categories* and accept when the categories match or are related by a small
+hand-coded lattice. The Emacs type hierarchy lives inline in
+`typespec-eval-types.el` (there is no `elisp_type_hierarchy.txt` file; the link
+in `typespec.md` points at the upstream Emacs source only).
 
-| Spec rule | Status |
+`unknown` (the **gradual dynamic**) and `mixed`/`t` (the **top**) are distinct,
+and only the assignability function treats them specially — in the strict
+`type-subtype-p` relation both are simply outside the lattice. See
+[ADR-0001](adr/0001-unknown-gradual-dynamic.md).
+
+| Spec rule (assignability) | Status |
 | --- | --- |
-| `unknown` is top (`T <: unknown`) | ✅ |
-| `unknown <: T` only when `T` is `unknown`/`mixed` | ✅ |
+| `unknown` is the gradual dynamic — consistent with every type in **both** directions; never a `:cause-error` | ✅ |
+| A union containing `unknown` is dynamic too (`(or string unknown)` consistent everywhere) | ✅ |
 | `fixnum <: integer`, `bignum <: integer` | ✅ |
 | `integer`/`float` disjoint; `real`/`number` ≡ `(or integer float)` | ✅ |
 | `marker`, `integer-or-marker`, `number-or-marker` placement | ✅ |
 | `hook <: list <: sequence` | ✅ |
 | Container **kind** relations (`vector <: array <: sequence`, `list <: sequence`) | ✅ |
 | `never` is bottom (`never <: T`) | ✅ |
-| `mixed`/`t` are bidirectional (assignable *from* as well as *to*) | ✅ |
+| `mixed`/`t` (top) are bidirectional (assignable *from* as well as *to*) — a deliberately retained value-side escape hatch, distinct from the dynamic (ADR-0001) | ✅ |
 | `character <: fixnum` | ✅ |
 | Range containment (`(integer a b) <: (integer c d)`) | ✅ |
 | Container element types compared (invariant) | ✅ |
@@ -76,7 +82,7 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | Float keyword aliases expand to range forms | ✅ |
 | `(and)` ≡ top | ◑ — evaluator emits `mixed` (equivalent, since `t` ≈ `mixed`) |
 | Integer keyword aliases (`positive-int`, `fixnum`, …) normalized | ◑ — only inside numeric ops, not at top level |
-| `or` drops `never`; a top member (`mixed`/`t`/`unknown`) collapses the union | ✅ |
+| `or` drops `never`; `mixed`/`t` (top) or `unknown` (the dynamic, absorbing here) collapses the union | ✅ |
 | `or` drops members subsumed by another (`(or fixnum integer)` ≡ `integer`) | ✅ — uses the raw elisp hierarchy, so same-category pairs like fixnum/integer reduce |
 | `and` drops bare `t`; `and` is flattened | ✅ |
 | Provably disjoint base types intersect to `never` (`(and integer string)`) | ✅ — `nil`-sharing categories (`symbol`/`list`/…) excluded |
@@ -130,19 +136,30 @@ The following unsoundness in `typespec-eval-call--type-compatible-p` has been
 fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 
 1. **`never` is now the bottom type** — assignable to any parameter.
-2. **`mixed`/`t` values are assignable anywhere** (escape hatch / universal).
-3. **Numeric range bounds are consulted** — `(integer 0 10)` is rejected where
+2. **`unknown` is the gradual dynamic** — consistent with every type in **both**
+   directions (a value typed `unknown`, or a union containing it, is acceptable
+   wherever any type is expected, and an `unknown` parameter accepts any
+   argument), so `typespec-eval-call` never `:cause-error`s on a dynamic
+   argument. Distinct from the top type `mixed`/`t`; see
+   [ADR-0001](adr/0001-unknown-gradual-dynamic.md).
+3. **`mixed`/`t` (top) values are assignable anywhere** — a deliberately
+   retained value-side escape hatch, kept distinct from the dynamic (ADR-0001).
+4. **Numeric range bounds are consulted** — `(integer 0 10)` is rejected where
    `(integer 2 5)` is required, and `(const 50)` where `(integer 0 10)` is.
-4. **Container element types are invariant** — `(vector fixnum)` and
+5. **Container element types are invariant** — `(vector fixnum)` and
    `(vector integer)` no longer interchange.
-5. **`(list T) <: (list+ T)` is rejected** (a possibly-empty list is not a
+6. **`(list T) <: (list+ T)` is rejected** (a possibly-empty list is not a
    non-empty list); `(list+ T) <: (list T)` still holds.
-6. **`character` is in the hierarchy** as a subtype of `fixnum`.
-7. **Function types use variance** — contravariant parameters, covariant
+7. **`character` is in the hierarchy** as a subtype of `fixnum`.
+8. **Function types use variance** — contravariant parameters, covariant
    return (simple positional signatures), with invariance as a sound fallback.
-8. **Value-side `(or …)` is decomposed** — every member must be compatible.
-9. **`(const v)` inhabitance honors range bounds**, not just the category.
-10. **`fixnum`/`bignum` are disjoint.** `numeric-subtype-p` special-cases
+   (Under gradual consistent-subtyping a dynamic — `unknown` — parameter on
+   either side is consistent with any parameter; see ADR-0001.)
+9. **Value-side `(or …)` is decomposed** — every member must be compatible,
+   *except* a union containing the dynamic `unknown`, which is accepted
+   wholesale (item 2).
+10. **`(const v)` inhabitance honors range bounds**, not just the category.
+11. **`fixnum`/`bignum` are disjoint.** `numeric-subtype-p` special-cases
     `bignum` (the integers outside the fixnum range), so `fixnum <: bignum`,
     `bignum <: fixnum`, and `(integer 0 5) <: bignum` are all rejected, while
     `bignum <: integer`/`number` hold.
@@ -211,3 +228,10 @@ double-negation eliminates (`(diff mixed (diff mixed T))` ≡ `T`), subtracting 
 top type yields `never` (`(diff mixed mixed)`/`(diff mixed t)`/
 `(diff mixed unknown)`), and subtracting `never` yields `mixed`. See
 `typespec-eval-diff-complement` in `typespec-eval-test.el`.
+
+The gradual dynamic stays dynamic on the **left** of a difference:
+`(diff unknown T)` ≡ `unknown` (subtracting a concrete type from a not-yet-known
+value cannot yield a provable exclusion). This keeps the `:guard!` false-branch
+narrowing of an `unknown` argument at `unknown` rather than `(diff unknown T)`;
+see [ADR-0001](adr/0001-unknown-gradual-dynamic.md) and the guard-narrowing
+section below.

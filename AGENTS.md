@@ -59,6 +59,10 @@ ert-fnspec-check).
   shape (in `-struct`); internal helpers use `--`.
 - `nil` is normalized to `(const nil)`. Inference is conservative: unknown
   types yield `boolean`/`unknown`, never a false positive.
+- `unknown` is the **gradual dynamic** (consistent with every type in *both*
+  directions; never a `:cause-error`), conceptually separate from the **top**
+  type `mixed`/`t`. See `docs/adr/0001-unknown-gradual-dynamic.md` (elistan
+  depends on this).
 - Pass-through forms (left for a full checker): `(:class …)`, `(:forall …)`,
   `(var …)`, `(benevolent …)`.
 
@@ -72,6 +76,8 @@ ert-fnspec-check).
 - `docs/typespec.md` — the notation / grammar.
 - `docs/type-level-evaluation.md` — guards, conditional return types, narrowing.
 - `docs/conformance.md` — exactly what the evaluator implements, plus known gaps.
+- `docs/adr/` — architecture decisions (e.g. `0001` `unknown` as the gradual
+  dynamic; mirrors elistan's coordination ADRs).
 
 ## Extending (brief)
 

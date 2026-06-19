@@ -89,6 +89,12 @@ For example, narrowing `(:guard! string)` against an argument typed
 `(or string integer)` yields `string` on the true branch and `integer` on the
 false branch.
 
+The gradual dynamic refines cleanly: against an `unknown` argument, the true
+branch is `(and unknown T)` ≡ `T` and the `:guard!` false branch `(diff unknown
+T)` ≡ `unknown` (the dynamic stays dynamic — see
+[ADR-0001](adr/0001-unknown-gradual-dynamic.md)), so `(:guard! string)` on
+`unknown` gives `string` / `unknown`.
+
 This narrowing *effect* is a pure type operation, so it lives in the
 foundation.  Orchestrating it over real code — a type environment
 (`var -> type`), threading it through `if`/`cond`/`and`/`or`/`let`, and joining
@@ -202,6 +208,30 @@ Example:
 (typespec-eval-call '(function (number) (const t)) '(fixnum))
 ;; => (const t)
 ```
+
+### The gradual dynamic (`unknown`)
+
+`unknown` is the **gradual dynamic**: a not-yet-known value, *consistent with
+every type in both directions* and conceptually separate from the top type
+`mixed`/`t`. An `unknown` argument (or a union that contains `unknown`) is
+therefore accepted wherever any type is expected — `typespec-eval-call` never
+returns `(:cause-error …)` for it — and an `unknown` parameter accepts any
+argument:
+
+```emacs-lisp
+(typespec-eval-call '(function (string) integer) '(unknown))
+;; => integer            ; not (:cause-error …)
+(typespec-eval-call '(function (string) integer) '((or string unknown)))
+;; => integer            ; a union containing the dynamic is itself dynamic
+(typespec-eval-call '(function (unknown) (const t)) '(integer))
+;; => (const t)          ; a dynamic parameter accepts anything
+```
+
+This is unsound by design — it implements the "report only provable
+incompatibilities" posture a consumer such as elistan relies on for its
+no-information default. `mixed`/`t` (top) keeps a separate, deliberately
+retained value-side escape hatch. See
+[ADR-0001](adr/0001-unknown-gradual-dynamic.md).
 
 ## Downcast and Benevolent
 

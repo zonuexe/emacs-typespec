@@ -96,6 +96,16 @@
                  'boolean))
   (should (equal (typespec-eval-call '(function (unknown) (:assert integer)) '(integer))
                  'integer))
+  ;; The gradual dynamic on the VALUE side: an `unknown' argument (or a union
+  ;; containing it) is consistent wherever any type is expected, so the call is
+  ;; never a `:cause-error'.  See `typespec-eval-call-gradual-dynamic'.
+  (should (equal (typespec-eval-call '(function (string) integer) '(unknown))
+                 'integer))
+  (should (equal (typespec-eval-call '(function (string) integer) '((or string unknown)))
+                 'integer))
+  (should (equal (typespec-eval-call '(function (integer string) (const t))
+                                     '(unknown unknown))
+                 '(const t)))
   (should (equal (typespec-eval-call '(:forall (a) (function (a) a)) '("foo"))
                  '(const "foo")))
   (should (equal (typespec-eval-call '(:forall (a) (function (a) a)) '((or "foo" "bar")))
@@ -171,6 +181,12 @@
   (should (equal (typespec-eval-call-narrowing '(function (unknown) (:assert integer))
                                                '(unknown))
                  '(:index 0 :assert integer)))
+  ;; Narrowing a gradual-dynamic argument: the true branch refines to the guard
+  ;; type, while the `:guard!' false branch stays `unknown' (the dynamic stays
+  ;; dynamic under set-difference) rather than leaving a `(diff unknown ...)'.
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) (:guard! string))
+                                               '(unknown))
+                 '(:index 0 :true string :false unknown)))
   ;; `:forall' is unwrapped; the refinement slot is used even with a RET slot.
   (should (equal (typespec-eval-call-narrowing '(:forall (a) (function (a) (:guard! string)))
                                                '((or string integer)))
@@ -261,8 +277,12 @@
     (should (equal (ok '(function ((function (string) integer)) (const t))
                        '((function (unknown) integer)))
                    '(const t)))
-    (should (rejected '(function ((function (unknown) integer)) (const t))
-                      '((function (string) integer))))
+    ;; A dynamic (`unknown') parameter on the EXPECTED function is consistent
+    ;; with any parameter on the value function (gradual consistent-subtyping):
+    ;; not a provable incompatibility, so the contravariant check accepts it.
+    (should (equal (ok '(function ((function (unknown) integer)) (const t))
+                       '((function (string) integer)))
+                   '(const t)))
     (should (rejected '(function ((function (integer) integer)) (const t))
                       '((function (integer) (or integer string)))))
     ;; Container element types are invariant by default.
@@ -273,6 +293,38 @@
     (should (rejected '(function ((list+ integer)) (const t)) '((list integer))))
     (should (equal (ok '(function ((list+ integer)) (const t)) '((list+ integer)))
                    '(const t)))))
+
+(ert-deftest typespec-eval-call-gradual-dynamic ()
+  "`unknown' is the gradual dynamic: consistent with every type in BOTH
+directions, conceptually separate from the top type `mixed'/`t'.  See ADR
+docs/adr/0001."
+  (cl-flet ((ok (fn args) (typespec-eval-call fn args))
+            (rejected (fn args)
+              (eq (car-safe (typespec-eval-call fn args)) :cause-error)))
+    ;; VALUE side: a not-yet-known value is acceptable wherever any type is
+    ;; expected -- never a `:cause-error'.
+    (should (equal (ok '(function (string) (const t)) '(unknown)) '(const t)))
+    (should (equal (ok '(function (integer) (const t)) '(unknown)) '(const t)))
+    (should (equal (ok '(function ((vector integer)) (const t)) '(unknown))
+                   '(const t)))
+    ;; A union that *contains* the dynamic is itself dynamic (gradual
+    ;; consistency rule): still acceptable everywhere, never an error.
+    (should (equal (ok '(function (string) (const t)) '((or string unknown)))
+                   '(const t)))
+    (should (equal (ok '(function (string) (const t)) '((or integer unknown)))
+                   '(const t)))
+    ;; EXPECTED side: an `unknown' parameter accepts any argument.
+    (should (equal (ok '(function (unknown) (const t)) '(string)) '(const t)))
+    (should (equal (ok '(function (unknown) (const t)) '(integer)) '(const t)))
+    (should (equal (ok '(function ((or string unknown)) (const t)) '(integer))
+                   '(const t)))
+    ;; The dynamic does NOT poison ordinary checking: concrete-to-concrete
+    ;; mismatches are still provable incompatibilities and are reported.
+    (should (rejected '(function (string) (const t)) '(integer)))
+    ;; `mixed'/`t' (top) keeps its value-side escape-hatch assignability; this
+    ;; is a deliberate, separate decision from the dynamic (see ADR).
+    (should (equal (ok '(function (string) (const t)) '(mixed)) '(const t)))
+    (should (equal (ok '(function (string) (const t)) '(t)) '(const t)))))
 
 (ert-deftest typespec-eval-normalization ()
   "Normalization completeness: range literals and or/and identities."

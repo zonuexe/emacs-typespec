@@ -721,6 +721,12 @@ RESULT-TYPE is returned when both arguments are string types."
      ((eq rhs 'never) lhs)
      ;; Subtracting a top type (the whole universe) leaves nothing.
      ((memq rhs '(mixed t unknown)) 'never)
+     ;; The gradual dynamic stays dynamic under set-difference: subtracting a
+     ;; concrete type from `unknown' cannot yield a provable exclusion, so the
+     ;; false branch of a `:guard!' narrowing on a not-yet-known value stays
+     ;; `unknown' rather than leaving a `(diff unknown ...)' residue.  (Contrast
+     ;; the top type `mixed', whose complement is a real subtractable universe.)
+     ((eq lhs 'unknown) 'unknown)
      ((equal lhs rhs) 'never)
      ((and (consp rhs) (eq (car rhs) 'or))
       (let ((items (cdr rhs))
