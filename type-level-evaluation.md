@@ -89,16 +89,12 @@ For example, narrowing `(:guard! string)` against an argument typed
 `(or string integer)` yields `string` on the true branch and `integer` on the
 false branch.
 
-`typespec-eval-env.el` adds a small flow model over this: a *type environment*
-(`var -> type`) with `typespec-eval-env-narrow` (refine a variable's type per
-branch from a guard tested on it) and `typespec-eval-env-join` (union the
-types at a control-flow confluence). Narrowing `x : (or string integer)` with
-`(:guard! string)` gives `x : string` in the true branch and `x : integer` in
-the false branch, and joining them back recovers `(or string integer)`.
-
-Driving these from the syntax of a function body — walking `if`/`cond`/`and`/
-`or`/`let`, resolving calls, and tracking lexical bindings — is the job of a
-full type checker, which is beyond the type-level evaluator.
+This narrowing *effect* is a pure type operation, so it lives in the
+foundation.  Orchestrating it over real code — a type environment
+(`var -> type`), threading it through `if`/`cond`/`and`/`or`/`let`, and joining
+at confluences — is a type-checker concern and lives in the separate
+[elistan](https://github.com/zonuexe/elistan) project, which consumes
+`typespec-eval-call-narrowing`.
 
 ### Optional result type for `:guard` / `:guard!`
 

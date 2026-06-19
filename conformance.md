@@ -147,25 +147,25 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
     `bignum <: fixnum`, and `(integer 0 5) <: bignum` are all rejected, while
     `bignum <: integer`/`number` hold.
 
-## Checker-foundation layer
+## Guard narrowing effect (foundation)
 
-Two pieces of a flow-sensitive checker exist on top of the evaluator, without
-walking Emacs Lisp source:
+`typespec-eval-call-narrowing` (in `typespec-eval.el`) computes the per-branch
+argument-refinement effect of a guard/assert predicate (`:guard`/`:guard!`/
+`:assert`).  This is the *meaning* of guard narrowing — a pure type operation
+that any consumer can use — so it lives in the foundation.
 
-- `typespec-eval-call-narrowing` (in `typespec-eval.el`) — the per-branch
-  argument-refinement effect of a guard/assert predicate.
-- `typespec-eval-env.el` — a **type environment** (`var -> type`) with
-  `typespec-eval-env-narrow` (apply a guard tested on a variable, yielding the
-  true/false/assert environments) and `typespec-eval-env-join` (union types at
-  a control-flow confluence).
+Orchestrating those refinements over real code — a type environment
+(`var -> type`), threading it through `if`/`cond`/`when`/`and`/`or`/`let`, and
+joining at confluences — is a type-checker concern and lives in the separate
+[elistan](https://github.com/zonuexe/elistan) project, not here.
 
-## Spec features not yet implemented
+## Not implemented (by design / out of scope)
 
-- A full flow-sensitive type checker over Emacs Lisp source. The refinement
-  and environment building blocks exist (above), but **driving** them from the
-  syntax of a function body — walking `if`/`cond`/`when`/`and`/`or`/`let`,
-  resolving calls, and expanding macros — is out of scope for the type-level
-  evaluator.
+- A type checker over Emacs Lisp source. The evaluator processes **typespec
+  forms** (the type notation written as a subset of Emacs Lisp), not Emacs Lisp
+  programs; parsing function bodies, expanding macros, and resolving calls are
+  non-goals.  The narrowing-effect building block above is provided for a
+  checker (elistan) to consume.
 - Conditional (`if`-based) guard returns in `typespec-eval-call-narrowing`
   (the narrowing currently handles a direct `:guard`/`:guard!`/`:assert`
   return, not one selected by an `(if PRED …)`).

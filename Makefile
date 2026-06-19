@@ -7,7 +7,7 @@ LOAD_PATH ?= -L .
 EL_SOURCES = typespec-core.el typespec.el typespec-builtins.el \
 	typespec-eval-core.el typespec-eval-types.el typespec-eval-var.el \
 	typespec-eval-simplify.el typespec-eval-struct.el typespec-eval-numeric.el \
-	typespec-eval-op.el typespec-eval.el typespec-eval-env.el
+	typespec-eval-op.el typespec-eval.el
 
 .PHONY: test check test-core test-eval clean compile
 
