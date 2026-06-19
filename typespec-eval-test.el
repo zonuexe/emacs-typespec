@@ -122,6 +122,41 @@
   (should (equal (typespec-eval-call '(function (integer string) &args) '(1 "x"))
                  '(:tuple (const 1) (const "x")))))
 
+(ert-deftest typespec-eval-call-structural-subtype ()
+  "Structural subtyping: cross-kind containers, tuples, and cons."
+  (cl-flet ((ok (fn args) (typespec-eval-call fn args))
+            (rejected (fn args)
+              (eq (car-safe (typespec-eval-call fn args)) :cause-error)))
+    ;; Container kind subtyping with invariant elements.
+    (should (equal (ok '(function ((sequence integer)) (const t)) '((list integer)))
+                   '(const t)))
+    (should (equal (ok '(function ((array integer)) (const t)) '((vector integer)))
+                   '(const t)))
+    (should (equal (ok '(function ((sequence integer)) (const t)) '((vector integer)))
+                   '(const t)))
+    (should (equal (ok '(function ((sequence character)) (const t)) '(string))
+                   '(const t)))
+    (should (equal (ok '(function ((list integer)) (const t)) '((list+ integer)))
+                   '(const t)))
+    (should (rejected '(function ((vector integer)) (const t)) '((list integer))))
+    (should (rejected '(function ((list integer)) (const t)) '((sequence integer))))
+    (should (rejected '(function ((vector integer)) (const t)) '((vector string))))
+    ;; Tuple subtyping.
+    (should (equal (ok '(function ((:tuple integer string)) (const t))
+                       '((:tuple integer string)))
+                   '(const t)))
+    (should (equal (ok '(function ((list integer)) (const t)) '((:tuple integer integer)))
+                   '(const t)))
+    (should (rejected '(function ((list integer)) (const t)) '((:tuple integer string))))
+    (should (rejected '(function ((:tuple integer string)) (const t))
+                      '((:tuple integer integer))))
+    ;; cons subtyping (invariant car/cdr).
+    (should (equal (ok '(function ((cons integer string)) (const t))
+                       '((cons integer string)))
+                   '(const t)))
+    (should (rejected '(function ((cons integer integer)) (const t))
+                      '((cons integer string))))))
+
 (ert-deftest typespec-eval-call-allow-other-keys ()
   (should (equal (typespec-eval-call
                   '(function (&key (:plist-of (:foo string)) &allow-other-keys)

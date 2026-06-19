@@ -725,6 +725,41 @@ positional signatures; complex signatures fall back to invariance."
                         (typespec-eval-call--type-compatible-p p s)))
                  sub-elems super-elems)))
 
+(defun typespec-eval-call--container-parts (form)
+  "Return (KIND ELEMENT) for a homogeneous container FORM, or nil.
+`string' is treated as an array of `character'; a bare container symbol has
+element type `mixed'."
+  (cond
+   ((eq form 'string) (list 'string 'character))
+   ((memq form '(list vector array sequence)) (list form 'mixed))
+   ((and (consp form) (memq (car form) '(list list+ vector array sequence)))
+    (list (car form) (if (cdr form) (cadr form) 'mixed)))
+   (t nil)))
+
+(defun typespec-eval-call--container-kind-<= (k1 k2)
+  "Non-nil if container kind K1 equals or is a sub-kind of K2."
+  (and (memq k2 (pcase k1
+                  ('list+ '(list+ list sequence))
+                  ('list '(list sequence))
+                  ('vector '(vector array sequence))
+                  ('string '(string array sequence))
+                  ('array '(array sequence))
+                  ('sequence '(sequence))
+                  (_ nil)))
+       t))
+
+(defun typespec-eval-call--proper-tuple-p (form)
+  "Non-nil if FORM is a proper (non-dotted) `:tuple' form."
+  (and (consp form) (eq (car form) :tuple) (proper-list-p form)))
+
+(defun typespec-eval-call--container-subtype-p (value expected)
+  "Non-nil if container VALUE is a subtype of container EXPECTED.
+Kind subtyping (e.g. list <: sequence) with invariant element types."
+  (pcase-let ((`(,vk ,ve) (typespec-eval-call--container-parts value))
+              (`(,pk ,pe) (typespec-eval-call--container-parts expected)))
+    (and (typespec-eval-call--container-kind-<= vk pk)
+         (typespec-eval-call--invariant-elements-p (list ve) (list pe)))))
+
 (defun typespec-eval-call--type-compatible-p (value expected)
   "Return non-nil if VALUE is assignable where EXPECTED is required."
   (let ((value (typespec-eval--eval value))
@@ -768,14 +803,34 @@ positional signatures; complex signatures fall back to invariance."
      ((and (typespec-eval-types-function-type-p value)
            (typespec-eval-types-function-type-p expected))
       (typespec-eval-call--function-subtype-p value expected))
-     ;; Non-empty list expected: a possibly-empty list is not assignable.
-     ((and (consp expected) (eq (car expected) 'list+))
-      (and (consp value) (eq (car value) 'list+)
-           (typespec-eval-call--invariant-elements-p (cdr value) (cdr expected))))
-     ;; Homogeneous containers: element types are invariant by default.
+     ;; Homogeneous containers: kind subtyping (list <: sequence, vector <:
+     ;; array <: sequence, string <: array, list+ <: list) with invariant
+     ;; element types.
+     ((and (typespec-eval-call--container-parts value)
+           (typespec-eval-call--container-parts expected))
+      (typespec-eval-call--container-subtype-p value expected))
+     ;; Tuple vs tuple: same length, invariant elements.
+     ((and (typespec-eval-call--proper-tuple-p value)
+           (typespec-eval-call--proper-tuple-p expected))
+      (typespec-eval-call--invariant-elements-p (cdr value) (cdr expected)))
+     ;; Tuple vs homogeneous list/sequence: each element fits the element type.
+     ((and (typespec-eval-call--proper-tuple-p value)
+           (let ((p (typespec-eval-call--container-parts expected)))
+             (and p (memq (car p) '(list sequence)))))
+      (let ((elem (cadr (typespec-eval-call--container-parts expected))))
+        (seq-every-p (lambda (a) (typespec-eval-call--type-compatible-p a elem))
+                     (cdr value))))
+     ;; cons: invariant car and cdr.
+     ((and (consp value) (eq (car value) 'cons)
+           (consp expected) (eq (car expected) 'cons))
+      (and (typespec-eval-call--invariant-elements-p
+            (list (cadr value)) (list (cadr expected)))
+           (typespec-eval-call--invariant-elements-p
+            (list (caddr value)) (list (caddr expected)))))
+     ;; alist / plist: invariant key and value types.
      ((and (consp value) (consp expected)
            (eq (car value) (car expected))
-           (memq (car expected) '(list vector array sequence)))
+           (memq (car expected) '(:alist :plist)))
       (typespec-eval-call--invariant-elements-p (cdr value) (cdr expected)))
      ;; Expected-side union / intersection.
      ((and (consp expected) (eq (car expected) 'or))

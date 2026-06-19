@@ -50,6 +50,9 @@ file; the link in `typespec.md` points at the upstream Emacs source only).
 | `character <: fixnum` | ✅ |
 | Range containment (`(integer a b) <: (integer c d)`) | ✅ |
 | Container element types compared (invariant) | ✅ |
+| Parametric cross-kind containers (`(list E) <: (sequence E)`, `string <: (sequence character)`, …) | ✅ |
+| Tuple subtyping (`(:tuple …)` elementwise; `(:tuple …) <: (list T)`) | ✅ |
+| `cons` / `:alist` / `:plist` structural subtyping (invariant) | ✅ |
 | `(list+ T) <: (list T)` only (not the reverse) | ✅ |
 | Function variance (params contravariant, return covariant) | ✅ |
 | `(or A1…An) <: T` iff every `Ai <: T` (value-side union) | ✅ |
