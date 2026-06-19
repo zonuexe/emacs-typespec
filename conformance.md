@@ -81,6 +81,8 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | `and` drops bare `t`; `and` is flattened | ✅ |
 | Provably disjoint base types intersect to `never` (`(and integer string)`) | ✅ — `nil`-sharing categories (`symbol`/`list`/…) excluded |
 | Intersection reduces identical and base-symbol subtype pairs (`(and vector array)` ≡ `vector`, `(and string string)` ≡ `string`) | ✅ — symbol-only (coarse `type-subtype-p` is imprecise for parametric forms) |
+| Intersection distributes over union (`(and (or A B) C)` ≡ `(or (and A C) (and B C))`) | ✅ |
+| `diff` removes a disjoint operand (`(diff integer string)` ≡ `integer`) | ✅ |
 | Bare range literals normalized (`(integer n n)` ≡ `(const n)`, inverted ≡ `never`, `(integer * *)` ≡ `integer`) | ✅ |
 | Integer range union merge | ✅ — overlapping/adjacent integer ranges in an `or` merge (`(or (integer 0 4) (integer 5 9))` ≡ `(integer 0 9)`); floats are not merged |
 | `(:tuple)` ≡ `(const nil)`; `(list+ T)` / `(:alist K V)` expansion | ✗ (opt-in normalizations; surface form preserved) |
@@ -99,8 +101,8 @@ Implemented in `typespec-eval.el` (`typespec-eval-call`) and
 | `(:cause-error INFO)` production; INFO shapes match the spec | ✅ |
 | `(value-of (:tuple …))` ≡ `(or …)`; dotted tail included; `(var 'SYM)` resolved first | ✅ |
 | `:forall` type-variable substitution at call sites | ✅ |
-| Argument-refinement effect of `:guard`/`:guard!`/`:assert` (first positional arg) | ⬚ checker-level |
-| `:guard!` false branch ⇒ `(not T)` (distinct from `:guard`) | ⬚/◑ — both currently collapse to `boolean` |
+| Argument-refinement effect of `:guard`/`:guard!`/`:assert` (first positional arg) | ✅ — `typespec-eval-call-narrowing` returns the per-branch refined types (a checker building block; the call *return* still collapses to `boolean`) |
+| `:guard!` false branch ⇒ `(diff ARG0 T)` (distinct from `:guard`) | ✅ — via `typespec-eval-call-narrowing` (`:guard` leaves the false branch unchanged) |
 | Optional second slot `(:guard T RET)` / `(:guard! T RET)` | ✅ — RET is the true-branch return type (defaults to `boolean`) |
 | `if` PRED rejects disallowed/state-dependent predicates | ✅ — denylist (`typespec-conditional-disallowed-functions`) yields `(:cause-error (invalid-predicate …))`; other forms keep the sound `(or …)` fallback |
 | `(if …)`/`:guard`/`:guard!`/`:assert` valid only in the RETTYPE slot | ✅ — `typespec-eval` returns `(:cause-error (misplaced-rettype …))` when one appears in a container, union, or argument position |
@@ -147,8 +149,14 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 
 ## Spec features not yet implemented
 
-- Argument-refinement effects of `:guard`/`:guard!`/`:assert` (checker-level).
-- `:guard!` false-branch complement (distinct behavior from `:guard`).
+- A full flow-sensitive type checker over Emacs Lisp source. The
+  *refinement-effect* building block exists (`typespec-eval-call-narrowing`),
+  but applying it across a function body — tracking lexical bindings and
+  threading the refined types through `if`/`cond`/`and`/`or` branches — is out
+  of scope for the type-level evaluator.
+- Conditional (`if`-based) guard returns in `typespec-eval-call-narrowing`
+  (the narrowing currently handles a direct `:guard`/`:guard!`/`:assert`
+  return, not one selected by an `(if PRED …)`).
 - Bare `(not T)` as a **type complement** — intentionally not done; use
   `(diff mixed T)` (see below).
 

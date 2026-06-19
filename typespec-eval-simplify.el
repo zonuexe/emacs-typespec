@@ -194,6 +194,13 @@ proper subtype of `integer'; symbols outside the hierarchy are left alone."
    ((eq rhs 'mixed) lhs)
    ;; Identical conjuncts collapse.
    ((equal lhs rhs) lhs)
+   ;; Distribute intersection over union: (and (or A B) C) = (or (and A C) (and B C)).
+   ((and (consp lhs) (eq (car lhs) 'or))
+    (typespec-eval-simplify-or
+     (mapcar (lambda (x) (typespec-eval-simplify-and-merge x rhs)) (cdr lhs))))
+   ((and (consp rhs) (eq (car rhs) 'or))
+    (typespec-eval-simplify-or
+     (mapcar (lambda (x) (typespec-eval-simplify-and-merge lhs x)) (cdr rhs))))
    ((and (typespec-eval--const-p lhs)
          (typespec-eval--const-p rhs))
     (if (equal lhs rhs) lhs 'never))

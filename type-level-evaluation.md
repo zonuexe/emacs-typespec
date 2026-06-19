@@ -72,6 +72,25 @@ The return value is also treated as that same refined type.
 In other words, `:assert` is shorthand for “this function returns the
 checked value and refines it on success.”
 
+### Computing the refinement effect
+
+The reference evaluator exposes `typespec-eval-call-narrowing` as a building
+block for a flow-sensitive checker. Given a guard/assert function spec and the
+actual argument types at a call site, it returns how the first positional
+argument is refined per branch, computed from the argument's incoming type
+`ARG0`:
+
+- `:guard T` → true branch `(and ARG0 T)`; false branch unchanged (the
+  predicate may be partial).
+- `:guard! T` → true branch `(and ARG0 T)`; false branch `(diff ARG0 T)`.
+- `:assert T` → success path `(and ARG0 T)`.
+
+For example, narrowing `(:guard! string)` against an argument typed
+`(or string integer)` yields `string` on the true branch and `integer` on the
+false branch. Applying these refinements across a function body — threading
+them through `if`/`cond`/`and`/`or` and tracking lexical bindings — is the job
+of a full type checker, which is beyond the type-level evaluator.
+
 ### Optional result type for `:guard` / `:guard!`
 
 Some predicates return a useful non-boolean value on the true branch

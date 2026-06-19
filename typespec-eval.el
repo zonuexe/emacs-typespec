@@ -1001,5 +1001,46 @@ Return a typespec result or a `(:cause-error ...)' form."
                      (_ ret))))))))
           (_ 'unknown))))))
 
+(defun typespec-eval-call-narrowing (funspec arg-types)
+  "Return the argument-refinement effect of applying FUNSPEC to ARG-TYPES.
+
+This is a building block for a flow-sensitive type checker: it computes how a
+guard/assert predicate refines its FIRST positional argument across branches.
+ARG-TYPES is the list of actual argument types at the call site.
+
+The result describes the first argument (index 0):
+- (:index 0 :true T-TRUE :false T-FALSE) for a `:guard'/`:guard!' return.
+  For `:guard' the false branch is left unchanged (the predicate may be
+  partial); for `:guard!' it is the complement `(diff ARG0 T)'.
+- (:index 0 :assert T) for an `:assert' return (the success path).
+Returns nil when FUNSPEC has no guard/assert return effect, or has no
+positional argument to refine.
+
+The true-branch / assert type is `(and ARG0 T)' — the intersection of the
+argument's incoming type with the guard type — which is at least as precise
+as T alone."
+  (let ((body (pcase funspec (`(:forall ,_ ,form) form) (_ funspec))))
+    (pcase body
+      (`(function ,_argspecs ,ret)
+       (and arg-types
+            (let ((arg0 (typespec-eval--eval (car arg-types))))
+              (pcase ret
+                (`(:guard ,gtype . ,_)
+                 (list :index 0
+                       :true (typespec-eval-op-and
+                              (list arg0 (typespec-eval--eval gtype)))
+                       :false arg0))
+                (`(:guard! ,gtype . ,_)
+                 (let ((gtype (typespec-eval--eval gtype)))
+                   (list :index 0
+                         :true (typespec-eval-op-and (list arg0 gtype))
+                         :false (typespec-eval-op-diff arg0 gtype))))
+                (`(:assert ,gtype)
+                 (list :index 0
+                       :assert (typespec-eval-op-and
+                                (list arg0 (typespec-eval--eval gtype)))))
+                (_ nil)))))
+      (_ nil))))
+
 (provide 'typespec-eval)
 ;;; typespec-eval.el ends here

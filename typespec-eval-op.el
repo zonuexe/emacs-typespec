@@ -736,6 +736,8 @@ RESULT-TYPE is returned when both arguments are string types."
      ((and (consp rhs) (eq (car rhs) 'diff)
            (equal (cadr rhs) 'mixed))
       (typespec-eval-simplify-and (list lhs (caddr rhs))))
+     ;; Subtracting a disjoint type removes nothing.
+     ((typespec-eval-types-disjoint-p lhs rhs) lhs)
      (t (list 'diff lhs rhs)))))
 
 (defun typespec-eval-op-downcast (_value target)

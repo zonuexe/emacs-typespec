@@ -157,6 +157,31 @@
     (should (rejected '(function ((cons integer integer)) (const t))
                       '((cons integer string))))))
 
+(ert-deftest typespec-eval-call-narrowing ()
+  "Guard/assert predicates compute argument-refinement effects."
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) (:guard string))
+                                               '(unknown))
+                 '(:index 0 :true string :false unknown)))
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) (:guard! string))
+                                               '((or string integer)))
+                 '(:index 0 :true string :false integer)))
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) (:guard! integer))
+                                               '((or string integer)))
+                 '(:index 0 :true integer :false string)))
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) (:assert integer))
+                                               '(unknown))
+                 '(:index 0 :assert integer)))
+  ;; `:forall' is unwrapped; the refinement slot is used even with a RET slot.
+  (should (equal (typespec-eval-call-narrowing '(:forall (a) (function (a) (:guard! string)))
+                                               '((or string integer)))
+                 '(:index 0 :true string :false integer)))
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) (:guard string str))
+                                               '(mixed))
+                 '(:index 0 :true string :false mixed)))
+  ;; No narrowing effect / no positional argument.
+  (should (equal (typespec-eval-call-narrowing '(function (unknown) boolean) '(unknown)) nil))
+  (should (equal (typespec-eval-call-narrowing '(function () (:guard string)) '()) nil)))
+
 (ert-deftest typespec-eval-call-allow-other-keys ()
   (should (equal (typespec-eval-call
                   '(function (&key (:plist-of (:foo string)) &allow-other-keys)
@@ -282,7 +307,10 @@
   (should (equal (typespec-eval '(and vector array)) 'vector))
   (should (equal (typespec-eval '(and fixnum integer)) 'fixnum))
   ;; Identical conjuncts collapse.
-  (should (equal (typespec-eval '(and string string)) 'string)))
+  (should (equal (typespec-eval '(and string string)) 'string))
+  ;; Intersection distributes over union.
+  (should (equal (typespec-eval '(and (or string integer) string)) 'string))
+  (should (equal (typespec-eval '(and (or integer string) number)) 'integer)))
 
 (ert-deftest typespec-eval-if-validate-pred ()
   "Disallowed/state-dependent predicates in `if' are rejected."
@@ -932,7 +960,10 @@
   (should (equal (typespec-eval '(diff mixed never)) 'mixed))
   (should (equal (typespec-eval '(diff mixed mixed)) 'never))
   (should (equal (typespec-eval '(diff mixed t)) 'never))
-  (should (equal (typespec-eval '(diff mixed unknown)) 'never)))
+  (should (equal (typespec-eval '(diff mixed unknown)) 'never))
+  ;; Subtracting a disjoint type removes nothing.
+  (should (equal (typespec-eval '(diff integer string)) 'integer))
+  (should (equal (typespec-eval '(diff (or string integer) string)) 'integer)))
 
 (ert-deftest typespec-eval-concat ()
   (should (equal (typespec-eval '(concat "a" "b" "c"))
