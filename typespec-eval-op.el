@@ -911,6 +911,57 @@ environment-dependent function listed in
 evaluated conservatively."
   (not (typespec-eval-op--pred-has-disallowed-p pred)))
 
+(defconst typespec-eval-op--rettype-heads '(:guard :guard! :assert if)
+  "Heads of RETTYPE forms, valid only in a function return position.")
+
+(defun typespec-eval-op--validate-args (args)
+  "Validate ARGS of a function type; return a cause-error or nil.
+Each argument type is a general TYPE position (no RETTYPE forms allowed)."
+  (and (listp args)
+       (seq-some
+        (lambda (spec)
+          (and (not (memq spec '(&optional &rest &keys &key &allow-other-keys)))
+               (typespec-eval-op-validate-positions spec nil)))
+        args)))
+
+(defun typespec-eval-op-validate-positions (form &optional allow-rettype)
+  "Return nil if RETTYPE forms in FORM appear only in return positions.
+Otherwise return `(:cause-error (misplaced-rettype SUBFORM))' for the first
+violation.  RETTYPE forms (`:guard'/`:guard!'/`:assert'/`if') are valid only
+as a function return slot or a nested `if' branch; ALLOW-RETTYPE is non-nil
+when FORM itself sits in such a position."
+  (cond
+   ((atom form) nil)
+   ((memq (car form) typespec-eval-op--rettype-heads)
+    (if (not allow-rettype)
+        (typespec-eval--make-cause-error (list 'misplaced-rettype form))
+      (pcase form
+        (`(if ,_pred ,then ,else)
+         (or (typespec-eval-op-validate-positions then t)
+             (typespec-eval-op-validate-positions else t)))
+        (`(,_ ,type . ,rest)
+         (or (typespec-eval-op-validate-positions type nil)
+             (and rest (typespec-eval-op-validate-positions (car rest) nil)))))))
+   (t
+    (pcase form
+      ;; Leaf-like forms whose children are not types.
+      (`(const . ,_) nil)
+      (`(rx . ,_) nil)
+      (`(var . ,_) nil)
+      (`(quote . ,_) nil)
+      (`(member . ,_) nil)
+      (`(:class . ,_) nil)
+      (`(:forall ,_ ,body)
+       (typespec-eval-op-validate-positions body allow-rettype))
+      (`(function ,args ,ret)
+       (or (typespec-eval-op--validate-args args)
+           (typespec-eval-op-validate-positions ret t)))
+      (_
+       ;; General type form: every cons child is a forbidden TYPE position.
+       (seq-some (lambda (child)
+                   (typespec-eval-op-validate-positions child nil))
+                 (cdr form)))))))
+
 (defun typespec-eval-op-if (pred then else)
   "Evaluate an `if` expression with PRED, THEN, and ELSE."
   (cond

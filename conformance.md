@@ -101,7 +101,7 @@ Implemented in `typespec-eval.el` (`typespec-eval-call`) and
 | `:guard!` false branch ⇒ `(not T)` (distinct from `:guard`) | ⬚/◑ — both currently collapse to `boolean` |
 | Optional second slot `(:guard T RET)` / `(:guard! T RET)` | ✅ — RET is the true-branch return type (defaults to `boolean`) |
 | `if` PRED rejects disallowed/state-dependent predicates | ✅ — denylist (`typespec-conditional-disallowed-functions`) yields `(:cause-error (invalid-predicate …))`; other forms keep the sound `(or …)` fallback |
-| `(if …)`/`:guard`/`:guard!`/`:assert` valid only in the RETTYPE slot | ✗ — accepted in any position |
+| `(if …)`/`:guard`/`:guard!`/`:assert` valid only in the RETTYPE slot | ✅ — `typespec-eval` returns `(:cause-error (misplaced-rettype …))` when one appears in a container, union, or argument position |
 | `&args` / `&rest` as meta-position actual-argument tuples | ✅ — substituted with the actual-argument tuples at the call site |
 
 ## Structural and utility types
@@ -147,8 +147,6 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
 
 - Argument-refinement effects of `:guard`/`:guard!`/`:assert` (checker-level).
 - `:guard!` false-branch complement (distinct behavior from `:guard`).
-- RETTYPE-position enforcement (`(if …)`/`:guard`/`:assert` only in the return
-  slot) — the `if`-PRED denylist is now enforced, but position is not.
 - Bare `(not T)` as a **type complement** — intentionally not done; use
   `(diff mixed T)` (see below).
 

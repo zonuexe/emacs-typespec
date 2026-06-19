@@ -614,8 +614,11 @@
     (_ 'unknown)))
 
 (defun typespec-eval (form)
-  "Evaluate FORM in the typespec value/type evaluator."
-  (typespec-eval--eval form))
+  "Evaluate FORM in the typespec value/type evaluator.
+Returns `(:cause-error (misplaced-rettype ...))' when a RETTYPE form
+\(`:guard'/`:guard!'/`:assert'/`if') appears outside a return position."
+  (or (typespec-eval-op-validate-positions form t)
+      (typespec-eval--eval form)))
 
 (defun typespec-eval-call--normalize-argspecs (argspecs)
   "Normalize ARGSPECS and return (NORMALIZED ALLOW-OTHER-KEYS)."

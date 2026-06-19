@@ -311,6 +311,23 @@
   (should (equal (typespec-eval '(or (integer 0 4) (integer 5 9) string))
                  '(or string (integer 0 9)))))
 
+(ert-deftest typespec-eval-rettype-position ()
+  "RETTYPE forms (:guard/:guard!/:assert/if) outside a return position are rejected."
+  (cl-flet ((misplaced (form)
+              (eq (car-safe (cadr (typespec-eval form))) 'misplaced-rettype)))
+    ;; Violations: RETTYPE nested in a container, union, or argument list.
+    (should (misplaced '(list (if boolean string integer))))
+    (should (misplaced '(or (:guard string) integer)))
+    (should (misplaced '(function ((:assert integer)) string)))
+    (should (misplaced '(:tuple (if boolean string integer) string)))
+    (should (misplaced '(cons (:guard string) integer)))
+    ;; Valid placements are not rejected.
+    (should-not (misplaced '(if boolean string integer)))
+    (should-not (misplaced '(function (symbol) (:guard t unknown))))
+    (should-not (misplaced '(function (unknown)
+                                      (if boolean (:guard string) (:assert integer)))))
+    (should-not (misplaced '(list integer)))))
+
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))
                  '(const t)))
