@@ -25,7 +25,7 @@
 ;; The stored spec is literal (not evaluated) so tooling can later read
 ;; and interpret it without executing arbitrary forms.
 ;;
-;; See typespec.md for the current spec syntax and conventions.
+;; See docs/typespec.md for the current spec syntax and conventions.
 
 ;;; Code:
 ;; (require 'byte-run) byte-run is not feature.
@@ -99,7 +99,7 @@
     process-status process-live-p selected-window window-live-p)
   "Functions explicitly disallowed in `if' predicates for conditional types.
 These consult mutable editor or environment state and must not appear in a
-type-level predicate.  See `type-level-evaluation.md'.")
+type-level predicate.  See `docs/type-level-evaluation.md'.")
 
 (defun typespec--version-older-p (version required)
   "Return non-nil if VERSION is older than REQUIRED."

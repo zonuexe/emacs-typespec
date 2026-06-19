@@ -69,9 +69,9 @@ ert-fnspec-check).
 
 ## Docs (sources of truth — keep updated with changes)
 
-- `typespec.md` — the notation / grammar.
-- `type-level-evaluation.md` — guards, conditional return types, narrowing.
-- `conformance.md` — exactly what the evaluator implements, plus known gaps.
+- `docs/typespec.md` — the notation / grammar.
+- `docs/type-level-evaluation.md` — guards, conditional return types, narrowing.
+- `docs/conformance.md` — exactly what the evaluator implements, plus known gaps.
 
 ## Extending (brief)
 
@@ -79,6 +79,6 @@ ert-fnspec-check).
   `typespec-eval-op-unary-predicate`; define `*-type-p`/`non-*-type-p` in
   `typespec-eval-types.el` and a category entry.
 - New operation: add a `typespec-eval-op-*` handler (alphabetical) + a `pcase`
-  arm. Update `conformance.md` and add a test.
+  arm. Update `docs/conformance.md` and add a test.
 - A new **pure type operation** a consumer needs → add it here, not in the
   consumer.

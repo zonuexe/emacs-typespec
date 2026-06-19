@@ -29,7 +29,7 @@
 ;; The stored spec is literal (not evaluated) so tooling can later read
 ;; and interpret it without executing arbitrary forms.
 ;;
-;; See typespec.md for the current spec syntax and conventions.
+;; See docs/typespec.md for the current spec syntax and conventions.
 
 ;;; Code:
 (require 'typespec-core)
