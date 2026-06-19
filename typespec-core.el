@@ -70,7 +70,7 @@
     concat string-bytes
     string-chop-newline string-clean-whitespace string-distance
     string-equal string-equal-ignore-case string-greaterp string-lessp
-    string-join string-limit string-lines string-match-p
+    string-join string-limit string-lines string-match string-match-p
     upcase downcase capitalize char-to-string make-string substring
     string-pad string-prefix-p string-remove-prefix string-remove-suffix
     string-replace string-search string-split string-suffix-p
@@ -87,6 +87,19 @@
     symbol-name identity not type-of cl-type-of
     kbd make-composed-keymap mouse-event-p sha1 syntax-class)
   "Functions allowed in `if' predicates for conditional return types.")
+
+(defconst typespec-conditional-disallowed-functions
+  '(;; environment-dependent symbol operations
+    intern make-symbol symbol-value symbol-function
+    boundp fboundp indirect-function indirect-variable
+    ;; runtime loading / mode state
+    macrop provided-mode-derived-p
+    ;; buffer-, process-, and window-dependent queries
+    current-buffer buffer-name buffer-live-p get-buffer get-buffer-process
+    process-status process-live-p selected-window window-live-p)
+  "Functions explicitly disallowed in `if' predicates for conditional types.
+These consult mutable editor or environment state and must not appear in a
+type-level predicate.  See `type-level-evaluation.md'.")
 
 (defun typespec--version-older-p (version required)
   "Return non-nil if VERSION is older than REQUIRED."

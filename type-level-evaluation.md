@@ -259,7 +259,7 @@ String helpers:
 - `concat`, `string-bytes`
 - `string-chop-newline`, `string-clean-whitespace`, `string-distance`
 - `string-equal`, `string-equal-ignore-case`, `string-greaterp`, `string-lessp`
-- `string-join`, `string-limit`, `string-lines`, `string-match-p`
+- `string-join`, `string-limit`, `string-lines`, `string-match`, `string-match-p`
 - `upcase`, `downcase`, `capitalize`, `char-to-string`, `make-string`, `substring`
 - `string-pad`, `string-prefix-p`, `string-remove-prefix`, `string-remove-suffix`
 - `string-replace`, `string-search`, `string-split`, `string-suffix-p`
@@ -316,7 +316,11 @@ PRED is an s-expression built from the allowed operators and operands.
 It is **not** evaluated at runtime; it is used only by type checkers to
 refine types for THEN/ELSE. Implementations should treat PRED as a pure
 expression with no side effects. A predicate that uses disallowed forms
-or operands is invalid and should be rejected.
+or operands is invalid and should be rejected. The reference evaluator
+rejects a PRED that calls a state-dependent or environment-dependent
+function (the not-allowed lists below) by returning
+`(:cause-error (invalid-predicate PRED))`; other unrecognized forms keep the
+conservative `(or THEN ELSE)` result.
 
 `(if PRED THEN ELSE)` is intended for **return positions** of function
 types. It is not a general-purpose type constructor for arbitrary

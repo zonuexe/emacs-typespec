@@ -281,6 +281,19 @@
   (should (equal (typespec-eval '(and integer number)) 'integer))
   (should (equal (typespec-eval '(and vector array)) '(and vector array))))
 
+(ert-deftest typespec-eval-if-validate-pred ()
+  "Disallowed/state-dependent predicates in `if' are rejected."
+  (should (equal (typespec-eval '(if (process-live-p x) string integer))
+                 '(:cause-error (invalid-predicate (process-live-p x)))))
+  (should (equal (typespec-eval '(if (boundp x) string integer))
+                 '(:cause-error (invalid-predicate (boundp x)))))
+  (should (equal (typespec-eval '(if (stringp (current-buffer)) string integer))
+                 '(:cause-error (invalid-predicate (stringp (current-buffer))))))
+  ;; Allowed predicates and type conditions still evaluate normally.
+  (should (equal (typespec-eval '(if boolean string integer)) '(or string integer)))
+  (should (equal (typespec-eval '(if (const t) string integer)) 'string))
+  (should (equal (typespec-eval '(if (stringp x) string integer)) '(or string integer))))
+
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))
                  '(const t)))

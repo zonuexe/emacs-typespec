@@ -26,6 +26,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'typespec-core)
 (require 'typespec-eval-core)
 (require 'typespec-eval-simplify)
 (require 'typespec-eval-struct)
@@ -894,20 +895,40 @@ TYPE-PRED is an optional predicate to check evaluated types."
      ((memq value '(unknown mixed)) 'never)
      (t 'never))))
 
+(defun typespec-eval-op--pred-has-disallowed-p (form)
+  "Return non-nil if FORM contains a disallowed predicate call.
+See `typespec-conditional-disallowed-functions'."
+  (and (consp form)
+       (or (and (symbolp (car form))
+                (memq (car form) typespec-conditional-disallowed-functions))
+           (seq-some #'typespec-eval-op--pred-has-disallowed-p form))))
+
+(defun typespec-eval-op-validate-pred (pred)
+  "Return non-nil if PRED is a valid `if' conditional predicate.
+A predicate is invalid only when it calls a state-dependent or
+environment-dependent function listed in
+`typespec-conditional-disallowed-functions'; other forms are accepted and
+evaluated conservatively."
+  (not (typespec-eval-op--pred-has-disallowed-p pred)))
+
 (defun typespec-eval-op-if (pred then else)
   "Evaluate an `if` expression with PRED, THEN, and ELSE."
-  (or (typespec-eval-op-if-rx-narrowing pred then else)
-      (let ((pred (typespec-eval--eval pred)))
-        (cond
-         ((eq pred 'never) 'never)
-         ((typespec-eval--always-non-nil-p pred)
-          (typespec-eval--eval then))
-         ((typespec-eval--always-nil-p pred)
-          (typespec-eval--eval else))
-         (t
-          (typespec-eval-simplify-or
-           (list (typespec-eval--eval then)
-                 (typespec-eval--eval else))))))))
+  (cond
+   ((not (typespec-eval-op-validate-pred pred))
+    (typespec-eval--make-cause-error (list 'invalid-predicate pred)))
+   ((typespec-eval-op-if-rx-narrowing pred then else))
+   (t
+    (let ((pred (typespec-eval--eval pred)))
+      (cond
+       ((eq pred 'never) 'never)
+       ((typespec-eval--always-non-nil-p pred)
+        (typespec-eval--eval then))
+       ((typespec-eval--always-nil-p pred)
+        (typespec-eval--eval else))
+       (t
+        (typespec-eval-simplify-or
+         (list (typespec-eval--eval then)
+               (typespec-eval--eval else)))))))))
 
 (defun typespec-eval-op--string-affix-narrowing (affix var rest then position)
   "Return a narrowing for string prefix/suffix predicates.
