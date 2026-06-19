@@ -175,6 +175,8 @@ Other members are preserved.  Adjacency uses integer semantics
    ((eq rhs 'unknown) lhs)
    ((eq lhs 'mixed) rhs)
    ((eq rhs 'mixed) lhs)
+   ;; Identical conjuncts collapse.
+   ((equal lhs rhs) lhs)
    ((and (typespec-eval--const-p lhs)
          (typespec-eval--const-p rhs))
     (if (equal lhs rhs) lhs 'never))
@@ -217,6 +219,14 @@ Other members are preserved.  Adjacency uses integer semantics
              (typespec-eval-types-integer-type-p rhs)
              (typespec-eval-types-float-type-p rhs)))
     (or (typespec-eval-simplify-intersect-number-types lhs rhs) (list 'and lhs rhs)))
+   ;; Subtype reduction for base symbols (sound via the elisp hierarchy):
+   ;; the intersection of A and a supertype B is A.
+   ((and (symbolp lhs) (symbolp rhs)
+         (typespec-eval-types-type-subtype-p lhs rhs))
+    lhs)
+   ((and (symbolp lhs) (symbolp rhs)
+         (typespec-eval-types-type-subtype-p rhs lhs))
+    rhs)
    ;; Provably disjoint base types intersect to `never'.
    ((typespec-eval-types-disjoint-p lhs rhs) 'never)
    (t (list 'and lhs rhs))))

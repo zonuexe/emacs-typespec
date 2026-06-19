@@ -79,6 +79,7 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | `or` drops `never`; a top member (`mixed`/`t`/`unknown`) collapses the union | ✅ |
 | `and` drops bare `t`; `and` is flattened | ✅ |
 | Provably disjoint base types intersect to `never` (`(and integer string)`) | ✅ — `nil`-sharing categories (`symbol`/`list`/…) excluded |
+| Intersection reduces identical and base-symbol subtype pairs (`(and vector array)` ≡ `vector`, `(and string string)` ≡ `string`) | ✅ — symbol-only (coarse `type-subtype-p` is imprecise for parametric forms) |
 | Bare range literals normalized (`(integer n n)` ≡ `(const n)`, inverted ≡ `never`, `(integer * *)` ≡ `integer`) | ✅ |
 | Integer range union merge | ✅ — overlapping/adjacent integer ranges in an `or` merge (`(or (integer 0 4) (integer 5 9))` ≡ `(integer 0 9)`); floats are not merged |
 | `(:tuple)` ≡ `(const nil)`; `(list+ T)` / `(:alist K V)` expansion | ✗ (opt-in normalizations; surface form preserved) |

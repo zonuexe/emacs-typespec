@@ -264,10 +264,10 @@
   (should (equal (typespec-eval '(or mixed integer)) 'mixed))
   (should (equal (typespec-eval '(or unknown string)) 'unknown))
   (should (equal (typespec-eval '(or t integer)) t))
-  ;; `and' identity / flattening (use a subtype chain so it is not reduced).
+  ;; `and' identity / flattening (use nominal classes so it is not reduced).
   (should (equal (typespec-eval '(and t integer)) 'integer))
-  (should (equal (typespec-eval '(and vector (and array sequence)))
-                 '(and vector array sequence))))
+  (should (equal (typespec-eval '(and (:class a) (and (:class b) (:class c))))
+                 '(and (:class a) (:class b) (:class c)))))
 
 (ert-deftest typespec-eval-and-disjoint ()
   "Provably disjoint base types intersect to `never'."
@@ -277,9 +277,12 @@
   (should (equal (typespec-eval '(and integer (and string symbol))) 'never))
   ;; `nil' is shared by `symbol' and `list', so they are not disjoint.
   (should (equal (typespec-eval '(and symbol list)) '(and symbol list)))
-  ;; Subtype relationships are not disjoint.
+  ;; Subtype relationships reduce to the narrower type, not `never'.
   (should (equal (typespec-eval '(and integer number)) 'integer))
-  (should (equal (typespec-eval '(and vector array)) '(and vector array))))
+  (should (equal (typespec-eval '(and vector array)) 'vector))
+  (should (equal (typespec-eval '(and fixnum integer)) 'fixnum))
+  ;; Identical conjuncts collapse.
+  (should (equal (typespec-eval '(and string string)) 'string)))
 
 (ert-deftest typespec-eval-if-validate-pred ()
   "Disallowed/state-dependent predicates in `if' are rejected."
