@@ -78,6 +78,7 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | Integer keyword aliases (`positive-int`, `fixnum`, …) normalized | ◑ — only inside numeric ops, not at top level |
 | `or` drops `never`; a top member (`mixed`/`t`/`unknown`) collapses the union | ✅ |
 | `and` drops bare `t`; `and` is flattened | ✅ |
+| Provably disjoint base types intersect to `never` (`(and integer string)`) | ✅ — `nil`-sharing categories (`symbol`/`list`/…) excluded |
 | Bare range literals normalized (`(integer n n)` ≡ `(const n)`, inverted ≡ `never`, `(integer * *)` ≡ `integer`) | ✅ |
 | Integer range union merge | ✗ (spec says "may"; not done — `simplify.el` sits below `numeric.el` so cannot reuse the range helpers) |
 | `(:tuple)` ≡ `(const nil)`; `(list+ T)` / `(:alist K V)` expansion | ✗ (opt-in normalizations; surface form preserved) |

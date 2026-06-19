@@ -264,10 +264,22 @@
   (should (equal (typespec-eval '(or mixed integer)) 'mixed))
   (should (equal (typespec-eval '(or unknown string)) 'unknown))
   (should (equal (typespec-eval '(or t integer)) t))
-  ;; `and' identity / flattening.
+  ;; `and' identity / flattening (use a subtype chain so it is not reduced).
   (should (equal (typespec-eval '(and t integer)) 'integer))
-  (should (equal (typespec-eval '(and integer (and string symbol)))
-                 '(and integer string symbol))))
+  (should (equal (typespec-eval '(and vector (and array sequence)))
+                 '(and vector array sequence))))
+
+(ert-deftest typespec-eval-and-disjoint ()
+  "Provably disjoint base types intersect to `never'."
+  (should (equal (typespec-eval '(and integer string)) 'never))
+  (should (equal (typespec-eval '(and string vector)) 'never))
+  (should (equal (typespec-eval '(and integer symbol)) 'never))
+  (should (equal (typespec-eval '(and integer (and string symbol))) 'never))
+  ;; `nil' is shared by `symbol' and `list', so they are not disjoint.
+  (should (equal (typespec-eval '(and symbol list)) '(and symbol list)))
+  ;; Subtype relationships are not disjoint.
+  (should (equal (typespec-eval '(and integer number)) 'integer))
+  (should (equal (typespec-eval '(and vector array)) '(and vector array))))
 
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))

@@ -434,5 +434,24 @@ Considers :guard-defined types via their base type."
   (and-let* ((cat (typespec-eval-types-type-category-with-guard form)))
     (not (eq cat 'vector))))
 
+(defconst typespec-eval-types--nilable-categories
+  '(symbol boolean null list sequence)
+  "Type categories whose values may include `nil'.
+`nil' is the only value shared across distinct base categories (it is a
+symbol, a boolean, and the empty list), so two types from these categories
+are not provably disjoint.")
+
+(defun typespec-eval-types-disjoint-p (a b)
+  "Return non-nil if types A and B are provably disjoint (share no value)."
+  (let ((ca (typespec-eval-types-type-category-with-guard a))
+        (cb (typespec-eval-types-type-category-with-guard b)))
+    (and ca cb
+         (not (eq ca cb))
+         (not (typespec-eval-types-type-subtype-p a b))
+         (not (typespec-eval-types-type-subtype-p b a))
+         ;; The only value shared across distinct categories is `nil'.
+         (not (and (memq ca typespec-eval-types--nilable-categories)
+                   (memq cb typespec-eval-types--nilable-categories))))))
+
 (provide 'typespec-eval-types)
 ;;; typespec-eval-types.el ends here

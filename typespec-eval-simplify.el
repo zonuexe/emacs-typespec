@@ -176,6 +176,8 @@
              (typespec-eval-types-integer-type-p rhs)
              (typespec-eval-types-float-type-p rhs)))
     (or (typespec-eval-simplify-intersect-number-types lhs rhs) (list 'and lhs rhs)))
+   ;; Provably disjoint base types intersect to `never'.
+   ((typespec-eval-types-disjoint-p lhs rhs) 'never)
    (t (list 'and lhs rhs))))
 
 (defun typespec-eval-simplify--flatten-and-parts (form)
