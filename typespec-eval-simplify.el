@@ -37,6 +37,45 @@
 
 ;;; `or` type simplification
 
+(defun typespec-eval-simplify--merge-integer-ranges (items)
+  "Merge overlapping or adjacent `(integer L H)' members of ITEMS.
+Other members are preserved.  Adjacency uses integer semantics
+\(\\=(integer 0 4) and \\=(integer 5 9) merge into \\=(integer 0 9))."
+  (let (ranges others)
+    (dolist (item items)
+      (if (typespec-eval--integer-range-p item)
+          (push (cons (typespec-eval-types-integer-bound-min (cadr item))
+                      (typespec-eval-types-integer-bound-max (caddr item)))
+                ranges)
+        (push item others)))
+    (if (null (cdr ranges))
+        items                           ; fewer than two ranges: nothing to merge
+      (let ((sorted (sort ranges
+                          (lambda (a b)
+                            (cond ((null (car a)) t)
+                                  ((null (car b)) nil)
+                                  (t (< (car a) (car b)))))))
+            merged)
+        (dolist (r sorted)
+          (let ((top (car merged)))
+            (if (and top
+                     (or (null (cdr top))           ; TOP unbounded above
+                         (null (car r))             ; R unbounded below
+                         (<= (car r) (1+ (cdr top)))))
+                (setcar merged
+                        (cons (if (or (null (car top)) (null (car r)))
+                                  nil (min (car top) (car r)))
+                              (if (or (null (cdr top)) (null (cdr r)))
+                                  nil (max (cdr top) (cdr r)))))
+              (push r merged))))
+        (append (nreverse others)
+                (mapcar (lambda (b)
+                          (if (and (null (car b)) (null (cdr b)))
+                              'integer
+                            (typespec-eval--integer-range (or (car b) '*)
+                                                          (or (cdr b) '*))))
+                        (nreverse merged)))))))
+
 (defun typespec-eval-simplify-or (items)
   "Return a simplified `(or ...)` form for ITEMS."
   (declare (ftype (function (t) t)))
@@ -62,7 +101,9 @@
      ((null (cdr items)) (car items))
      ((equal items '((const t) (const nil))) 'boolean)
      ((equal items '((const nil) (const t))) 'boolean)
-     (t (cons 'or items))))))
+     (t
+      (let ((items (typespec-eval-simplify--merge-integer-ranges items)))
+        (if (null (cdr items)) (car items) (cons 'or items))))))))
 
 ;;; rx pattern helpers
 

@@ -80,7 +80,7 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | `and` drops bare `t`; `and` is flattened | ✅ |
 | Provably disjoint base types intersect to `never` (`(and integer string)`) | ✅ — `nil`-sharing categories (`symbol`/`list`/…) excluded |
 | Bare range literals normalized (`(integer n n)` ≡ `(const n)`, inverted ≡ `never`, `(integer * *)` ≡ `integer`) | ✅ |
-| Integer range union merge | ✗ (spec says "may"; not done — `simplify.el` sits below `numeric.el` so cannot reuse the range helpers) |
+| Integer range union merge | ✅ — overlapping/adjacent integer ranges in an `or` merge (`(or (integer 0 4) (integer 5 9))` ≡ `(integer 0 9)`); floats are not merged |
 | `(:tuple)` ≡ `(const nil)`; `(list+ T)` / `(:alist K V)` expansion | ✗ (opt-in normalizations; surface form preserved) |
 | `(not (not T))` ≡ `T`, `(not never)` ≡ `t`, etc. | ◑ — via the complement spelling `(diff mixed T)`; bare `(not T)` is the predicate (see *the `not` overload*) |
 

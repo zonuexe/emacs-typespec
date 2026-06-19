@@ -294,6 +294,23 @@
   (should (equal (typespec-eval '(if (const t) string integer)) 'string))
   (should (equal (typespec-eval '(if (stringp x) string integer)) '(or string integer))))
 
+(ert-deftest typespec-eval-or-range-merge ()
+  "Overlapping/adjacent integer ranges in a union are merged."
+  (should (equal (typespec-eval '(or (integer 0 4) (integer 5 9))) '(integer 0 9)))
+  (should (equal (typespec-eval '(or (integer 0 5) (integer 3 9))) '(integer 0 9)))
+  (should (equal (typespec-eval '(or (integer 0 2) (integer 3 5) (integer 6 8)))
+                 '(integer 0 8)))
+  (should (equal (typespec-eval '(or (integer * 0) (integer 1 *))) 'integer))
+  ;; Disjoint (non-adjacent) integer ranges are preserved.
+  (should (equal (typespec-eval '(or (integer 0 2) (integer 10 12)))
+                 '(or (integer 0 2) (integer 10 12))))
+  ;; Float ranges are not merged.
+  (should (equal (typespec-eval '(or (float 0.0 1.0) (float 2.0 3.0)))
+                 '(or (float 0.0 1.0) (float 2.0 3.0))))
+  ;; Non-range members are preserved alongside merged ranges.
+  (should (equal (typespec-eval '(or (integer 0 4) (integer 5 9) string))
+                 '(or string (integer 0 9)))))
+
 (ert-deftest typespec-eval-numeric-equal ()
   (should (equal (typespec-eval '(= (const 1) (const 1)))
                  '(const t)))
