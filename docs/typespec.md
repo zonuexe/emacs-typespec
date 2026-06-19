@@ -47,7 +47,8 @@ on top.
 - S-expression syntax with small surface area.
 - Readable by Lisp users; no reader macros required.
 - Avoid type-theory contradictions where practical.
-- Keep a clear escape hatch for “any” and “unknown” values.
+- Distinguish a gradual dynamic (`unknown`, for not-yet-known values) from a
+  top/escape-hatch (`mixed`/`t`, for pass-through), and keep both available.
 - Allow erasing advanced Typespec forms into `ftype`-compatible declarations.
 
 ## Non-goals
@@ -63,6 +64,7 @@ Types are written as symbols or lists.
 ```
 TYPE ::= symbol
        | (const VALUE)
+       | (member VALUE...)
        | (or TYPE...)
        | (and TYPE...)
        | (not TYPE)
@@ -179,6 +181,11 @@ Range notation uses `*` for an unbounded side. For example,
 any integer >= 0. Bounds are inclusive by default.
 To indicate an exclusive bound, wrap it in a list: `(integer (0) *)`
 means greater than 0, and `(integer * (10))` means less than 10.
+Either or both ends may be exclusive: `(integer (0) (10))` is `0 < n < 10`.
+For `integer`, exclusive bounds normalize to the equivalent inclusive bounds
+(so `(integer (0) (10))` ≡ `(integer 1 9)`); for `float`/`real`/`number` the
+exclusive bound is preserved. An exclusive range with no inhabitants — e.g.
+`(integer (5) (5))` or `(integer (0) (1))` — normalizes to `never`.
 
 **Normalization policy**: Keyword types like `positive-int`, `non-negative-int`,
 `negative-int`, `non-positive-int`, and `fixnum` are treated as **input aliases**
@@ -234,18 +241,28 @@ explicitly rather than implicitly.
 
 ### Elsa-inspired types
 
-- `unknown` — the *top type*: accepts anything, but is not implicitly
-  accepted by other types.
-- `mixed` — the “escape hatch”: both top and bottom in practice, i.e.
-  implicitly accepted by any type and accepts any type.
+- `unknown` — the **gradual dynamic** ("no information" / not-yet-known). It is
+  *consistent with every type in both directions*: a value of type `unknown` is
+  accepted wherever any type is expected, and an `unknown` parameter accepts any
+  argument. A union that contains `unknown` is likewise dynamic. This is unsound
+  by design and is never a type error — it implements the "report only provable
+  incompatibilities" posture. `unknown` is **not** the top type; it can still be
+  refined by guards (see Type Guards). See
+  [ADR-0001](adr/0001-unknown-gradual-dynamic.md).
+- `mixed` — the **top type** and escape hatch: the universal supertype. On the
+  expected side it soundly accepts any value; on the value side it is *also*
+  assignable anywhere — a deliberately retained, unsound escape hatch for
+  pass-through code. `t` (the `cl-typep` universal type) behaves like `mixed`.
 
-This mirrors the `unknown` vs `any` distinction in TypeScript.
-In this spec, `t` is treated like `mixed` for `cl-typep` compatibility.
+`unknown` (the dynamic) and `mixed`/`t` (the top) are distinct concepts; see
+*Subtyping and Assignability*. In TypeScript terms this `unknown` behaves like
+`any` (the dynamic, accepted both ways), **not** like TypeScript's sound
+`unknown`; the sound universal supertype here is `mixed`/`t`.
 
 Example usage:
 
 ```emacs-lisp
-;; `unknown` for untrusted input or values that must be refined.
+;; `unknown` for untrusted input or not-yet-known values you may refine.
 (typespec #'read (function (string) unknown))
 
 ;; `mixed` for dynamic values you intentionally pass through unchecked.
@@ -304,6 +321,9 @@ Typespec recognizes several ways to define “a type”:
   `(:plist K V)`, `(:plist-of ...)`, `list`, `vector`, `array`, `sequence`,
   `cons`, and `hash-table`.
 - Logical types: `(or ...)`, `(and ...)`, `(not ...)`, and `(diff ...)`.
+- Enumeration: `(member V1 V2 ...)`, the `cl-typep` set form, equivalent to
+  `(or (const V1) (const V2) ...)`; the evaluator folds it when every `Vi` is an
+  atom.
 - Utility/meta types: `(const ...)`, `(rx ...)`, `(generalize ...)`,
   `(generalize-signed ...)`, `(downcast ...)`, `(benevolent ...)`,
   `(value-of ...)`, `(var ...)`, `(plist-key-of ...)`, `(plist-value-of ...)`,
@@ -315,6 +335,29 @@ utility/meta types or higher-order function types:
 - Function types `(function ...)` are higher-order types; they are not defined
   by a predicate or structure, but by input/output constraints.
 - `unknown`, `mixed`, `never`, and `void` are special-purpose meta types.
+
+### Notation layers and what is deferred to a checker
+
+The notation vocabulary lives in three layers:
+
+1. **Type forms** — the `TYPE` grammar in *Core Syntax*. A `typespec`
+   annotation is written in these.
+2. **Return-position forms** — `RETTYPE` (`:guard`/`:guard!`/`:assert`/`if`,
+   plus the `:cause-error` diagnostic), valid only in a function's return slot.
+3. **The predicate / expression language** — the s-expressions allowed inside an
+   `if` PRED and during type-level evaluation (`value-of`, guard refinement,
+   `&args`/`&rest` substitution, and the large set of foldable calls such as
+   `stringp`, `car`, `+`). This layer is defined in
+   [type-level-evaluation.md](type-level-evaluation.md).
+
+Type-system *operations* (the algebra, normalization, subtyping/consistency,
+narrowing computation, type resolution) are in scope and implemented here.
+*Orchestration over real code* is not: walking Emacs Lisp source, macro
+expansion, call resolution, and flow-sensitive narrowing across control flow are
+a checker's job (a consumer such as elistan). A few forms are also only
+partially evaluated by the reference implementation (e.g. `(:class …)` and
+`(:forall …)` are largely checker-level). See
+[conformance.md](conformance.md) for the precise implemented-vs-deferred status.
 
 ## Combinators (Type Theory Names)
 
@@ -384,6 +427,11 @@ Concrete expectations:
 - `(function (positive-int) int)` is **not** a subtype of `(function (int) int)`.
 - `(function ((or int string)) int)` **is** a subtype of `(function (int) int)`.
 - `(function (int) (or int string))` is **not** a subtype of `(function (int) int)`.
+- Under the *assignability* relation (not strict `<:`), a dynamic `unknown`
+  parameter is consistent with any parameter on either side. So
+  `(function (string) int)` is **accepted** where `(function (unknown) int)` is
+  required — gradual consistent-subtyping, not a provable incompatibility (see
+  [ADR-0001](adr/0001-unknown-gradual-dynamic.md)).
 
 Tools that do not implement variance should treat function types as invariant.
 This follows the Liskov Substitution Principle: any value of the subtype
@@ -406,23 +454,38 @@ Implementations may conservatively fall back to invariance here.
 
 ## Subtyping and Assignability
 
-This section defines the general subtype relation `S <: T` ("a value of type
-`S` is assignable wherever `T` is expected"). Function variance (above) is a
-special case of these rules.
+Typespec uses two related relations; tools should keep them distinct.
 
-The relation is **reflexive** (`T <: T`) and **transitive** (if `A <: B` and
-`B <: C` then `A <: C`).
+- **Strict subtyping** `S <: T` — "every value of type `S` is also a value of
+  type `T`." This is the *sound* relation: the elisp type lattice, numeric
+  ranges, unions/intersections, containers, and function variance. It is
+  **reflexive** (`T <: T`) and **transitive** (if `A <: B` and `B <: C` then
+  `A <: C`). The gradual dynamic `unknown` and the top/escape-hatch `mixed`/`t`
+  are **outside** `<:` — under strict subtyping they are neither subtypes nor
+  supertypes of ordinary types.
+- **Assignability / gradual consistency** — the acceptance relation a checker
+  uses to decide whether a value is acceptable where a type is expected (e.g. an
+  argument at a call site). It *extends* `<:` with the top, dynamic, and
+  escape-hatch rules below, so it is intentionally **not** sound. This is the
+  relation the reference evaluator's call checking uses; see
+  [ADR-0001](adr/0001-unknown-gradual-dynamic.md).
 
-### Top, bottom, and the escape hatch
+The rules in this section define `<:`; the bullets just below add the extra
+assignability rules. Function variance (above) is a special case.
 
-- `never <: T` for every `T`; `never` is the bottom type.
-- `T <: unknown` for every `T`; `unknown` is the top type. The converse
-  `unknown <: T` holds **only** when `T` is `unknown` (or `mixed`): `unknown`
-  is not implicitly accepted elsewhere and must be refined first.
-- `mixed` is the escape hatch: both `mixed <: T` and `T <: mixed` hold for
-  every `T`. This is intentionally unsound and exists for pass-through code.
-- `t` is the `cl-typep` universal type and behaves like `mixed`.
-- `void` is **outside** the relation: it is neither a subtype nor a supertype
+### Top, bottom, the dynamic, and the escape hatch
+
+- `never <: T` for every `T`; `never` is the bottom type (assignable anywhere).
+- `mixed`/`t` is the **top type**: `T <: mixed` for every `T` (sound). As an
+  escape hatch it is *also* assignable from — a `mixed`/`t` value is accepted
+  where any `T` is expected. That direction (`mixed` used as a value) is
+  intentionally unsound and exists for pass-through code.
+- `unknown` is the **gradual dynamic**: in the assignability relation it is
+  consistent with every type in *both* directions (accepted wherever any `T` is
+  expected, and accepts any value), and a union containing `unknown` is likewise
+  dynamic. It is never a type error. `unknown` is *not* part of strict `<:`; it
+  is a refinable "no information" type, distinct from the top `mixed`/`t`.
+- `void` is **outside** both relations: it is neither a subtype nor a supertype
   of ordinary types, and a value of type `void` must not be assigned to or
   consumed (see the Void section). A checker treats any such use as an error.
 
@@ -518,8 +581,9 @@ decidable. Implementations should keep the relation **sound** — never report
 subtype) when a precise decision is out of reach.
 
 The bundled `typespec-eval` evaluator checks numeric range containment,
-container-element invariance, and function variance, treating `never` as bottom
-and `mixed`/`t` as the escape hatch. A few coarse cases remain (e.g. `bignum`
+container-element invariance, and function variance, treating `never` as bottom,
+`mixed`/`t` as the top/escape hatch, and `unknown` as the gradual dynamic
+(consistent in both directions). A few coarse cases remain (e.g. `bignum`
 is modeled as an unbounded integer range). See
 [`conformance.md`](conformance.md) for the precise per-feature status.
 
@@ -537,12 +601,15 @@ rather than relying on implicit reductions.
   empty intersection.
 - `(or (const t) (const nil))` ≡ `boolean` (and vice versa).
 - `(or T)` ≡ `T`; `(and T)` ≡ `T`.
-- In `or`, `never` is the identity element (drop it); if any member is a top
-  type (`t`/`mixed`/`unknown`) the whole union collapses to that top.
-- In `and`, `t`/`mixed` is the identity element (drop it); if any member is
-  `never` the whole intersection collapses to `never`.
-- When a complement is exact, `(or T (not T))` ≡ `t` and `(and T (not T))` ≡
-  `never`.
+- In `or`, `never` is the identity element (drop it); a top member (`t`/`mixed`)
+  collapses the union to that top, and the dynamic `unknown` likewise absorbs the
+  union (`(or T unknown)` ≡ `unknown` — see ADR-0001; collapsing `(or T dynamic)`
+  to the dynamic loses no checking power, since it is consistent with everything
+  either way).
+- In `and`, `t`/`mixed` and `unknown` are identity elements (drop them); if any
+  member is `never` the whole intersection collapses to `never`.
+- When a complement is exact, `(or T (diff mixed T))` ≡ `t` and
+  `(and T (diff mixed T))` ≡ `never`.
 
 ### Flattening and de-duplication
 
@@ -579,9 +646,14 @@ constant whose equivalence is implementation-defined.
 - `(:tuple)` ≡ `(const nil)`.
 - `(:tuple A1 ... An . R)` ≡ its cons-chain expansion.
 - `(list+ T)` ≡ `(cons T (list T))`.
-- `(not (not T))` ≡ `T`; `(not never)` ≡ `t`; `(not t)` ≡ `(not mixed)` ≡
+- Complement is spelled `(diff mixed T)` (the bare `(not T)` form is the boolean
+  predicate — see *Combinators*): `(diff mixed (diff mixed T))` ≡ `T`;
+  `(diff mixed never)` ≡ `mixed`; `(diff mixed t)` ≡ `(diff mixed mixed)` ≡
   `never`.
-- `(diff A A)` ≡ `never`; `(diff A B)` ≡ `A` when `A` and `B` are disjoint.
+- `(diff A A)` ≡ `never`; `(diff A B)` ≡ `A` when `A` and `B` are disjoint;
+  subtracting a top type or the dynamic — `(diff A mixed)`/`(diff A t)`/
+  `(diff A unknown)` — ≡ `never`, while the dynamic on the left stays dynamic
+  (`(diff unknown T)` ≡ `unknown`, see ADR-0001).
 
 ### Containers holding `never`
 
@@ -754,6 +826,24 @@ for invalid calls (e.g. wrong arity or wrong argument type). It is not a
 runtime value, but a diagnostic marker that tools can surface. Static
 analyzers may treat it as equivalent to `never`, or preserve it to keep
 error context.
+
+`INFO` is a list whose head is an error symbol. The reference evaluator emits
+exactly these shapes:
+
+- `(wrong-type-argument EXPECTED ACTUAL)` — an argument (or a `:plist`/`:plist-of`
+  key or value) was not assignable to the expected type. `ACTUAL` is the
+  offending value/type with any `(const …)` wrapper removed.
+- `(wrong-number-of-arguments NARGS)` — the call supplied too few or too many
+  arguments for the signature (`NARGS` is the count supplied).
+- `(misplaced-rettype FORM)` — a return-position form (`:guard`, `:guard!`,
+  `:assert`, or `if`) appeared outside a function return slot (in a container,
+  union, or argument position); `FORM` is the offending subform.
+- `(invalid-predicate PRED)` — an `if` PRED used a disallowed or
+  state-dependent predicate (see *Conditional Return Types* in
+  type-level-evaluation.md); `PRED` is the rejected predicate form.
+
+`:cause-error` is itself a return-position diagnostic, not a member type: it is
+not expected to appear inside `or`/`and`/containers.
 
 ### `downcast` (explicit type assertion)
 

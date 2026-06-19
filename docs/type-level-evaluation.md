@@ -191,6 +191,16 @@ When validation fails, `typespec-eval-call` returns `(:cause-error INFO)` where
 - `(wrong-number-of-arguments N)` - Too few or too many arguments
 - `(wrong-type-argument EXPECTED ACTUAL)` - Type mismatch
 
+Type-level evaluation can also emit two more `INFO` shapes (outside
+`typespec-eval-call`, during `typespec-eval`):
+
+- `(misplaced-rettype FORM)` - a `:guard`/`:guard!`/`:assert`/`if` form appeared
+  outside a function return slot.
+- `(invalid-predicate PRED)` - an `if` PRED used a disallowed/state-dependent
+  predicate (see *Conditional Return Types* below).
+
+See [typespec.md](typespec.md) (`:cause-error`) for the full enumeration.
+
 Example:
 
 ```emacs-lisp
