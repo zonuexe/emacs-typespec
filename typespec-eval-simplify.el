@@ -76,6 +76,22 @@ Other members are preserved.  Adjacency uses integer semantics
                                                           (or (cdr b) '*))))
                         (nreverse merged)))))))
 
+(defun typespec-eval-simplify--drop-subsumed (items)
+  "Drop ITEMS that are a proper subtype of another member in the elisp
+hierarchy.  `(or fixnum integer)' becomes `(or integer)'.  Uses the raw
+hierarchy walk (not the category-based check) so `fixnum' is recognized as a
+proper subtype of `integer'; symbols outside the hierarchy are left alone."
+  (seq-remove
+   (lambda (x)
+     (and (symbolp x)
+          (seq-some
+           (lambda (y)
+             (and (not (eq x y)) (symbolp y)
+                  (typespec-eval-types--elisp-subtype-p x y)
+                  (not (typespec-eval-types--elisp-subtype-p y x))))
+           items)))
+   items))
+
 (defun typespec-eval-simplify-or (items)
   "Return a simplified `(or ...)` form for ITEMS."
   (declare (ftype (function (t) t)))
@@ -96,6 +112,7 @@ Other members are preserved.  Adjacency uses integer semantics
    (t
     ;; `never' is the identity element of `or'.
     (setq items (delq 'never items))
+    (setq items (typespec-eval-simplify--drop-subsumed items))
     (cond
      ((null items) 'never)
      ((null (cdr items)) (car items))

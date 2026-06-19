@@ -314,6 +314,17 @@
   (should (equal (typespec-eval '(or (integer 0 4) (integer 5 9) string))
                  '(or string (integer 0 9)))))
 
+(ert-deftest typespec-eval-or-subsume ()
+  "Union members that are a proper subtype of another member are dropped."
+  (should (equal (typespec-eval '(or fixnum integer)) 'integer))
+  (should (equal (typespec-eval '(or integer number)) 'number))
+  (should (equal (typespec-eval '(or vector array)) 'array))
+  (should (equal (typespec-eval '(or list sequence)) 'sequence))
+  (should (equal (typespec-eval '(or fixnum bignum integer)) 'integer))
+  ;; Unrelated members are preserved.
+  (should (equal (typespec-eval '(or integer string)) '(or integer string)))
+  (should (equal (typespec-eval '(or fixnum string)) '(or fixnum string))))
+
 (ert-deftest typespec-eval-rettype-position ()
   "RETTYPE forms (:guard/:guard!/:assert/if) outside a return position are rejected."
   (cl-flet ((misplaced (form)

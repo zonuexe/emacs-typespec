@@ -77,6 +77,7 @@ Implemented in `typespec-eval-simplify.el` and `typespec-eval-numeric.el`.
 | `(and)` ≡ top | ◑ — evaluator emits `mixed` (equivalent, since `t` ≈ `mixed`) |
 | Integer keyword aliases (`positive-int`, `fixnum`, …) normalized | ◑ — only inside numeric ops, not at top level |
 | `or` drops `never`; a top member (`mixed`/`t`/`unknown`) collapses the union | ✅ |
+| `or` drops members subsumed by another (`(or fixnum integer)` ≡ `integer`) | ✅ — uses the raw elisp hierarchy, so same-category pairs like fixnum/integer reduce |
 | `and` drops bare `t`; `and` is flattened | ✅ |
 | Provably disjoint base types intersect to `never` (`(and integer string)`) | ✅ — `nil`-sharing categories (`symbol`/`list`/…) excluded |
 | Intersection reduces identical and base-symbol subtype pairs (`(and vector array)` ≡ `vector`, `(and string string)` ≡ `string`) | ✅ — symbol-only (coarse `type-subtype-p` is imprecise for parametric forms) |
