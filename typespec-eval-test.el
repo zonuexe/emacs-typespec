@@ -25,6 +25,7 @@
 (require 'ert)
 (require 'seq)
 (require 'typespec-eval)
+(require 'typespec-eval-env)
 (require 'comp-common)
 
 (ert-deftest typespec-eval-eq ()
@@ -181,6 +182,38 @@
   ;; No narrowing effect / no positional argument.
   (should (equal (typespec-eval-call-narrowing '(function (unknown) boolean) '(unknown)) nil))
   (should (equal (typespec-eval-call-narrowing '(function () (:guard string)) '()) nil)))
+
+(ert-deftest typespec-eval-env ()
+  "Type environment: get/set, branch narrowing, and join."
+  ;; get / set with default; set is functional (no mutation).
+  (let ((env (typespec-eval-env-make '((x . string)))))
+    (should (equal (typespec-eval-env-get env 'x) 'string))
+    (should (equal (typespec-eval-env-get env 'y) 'unknown))
+    (should (equal (typespec-eval-env-get (typespec-eval-env-set env 'y 'integer) 'y)
+                   'integer))
+    (should (equal (typespec-eval-env-get env 'y) 'unknown)))
+  ;; `:guard!' narrowing then join recovers the original union.
+  (let* ((env (typespec-eval-env-make '((x . (or string integer)))))
+         (b (typespec-eval-env-narrow env 'x '(function (unknown) (:guard! string)))))
+    (should (equal (typespec-eval-env-get (plist-get b :true) 'x) 'string))
+    (should (equal (typespec-eval-env-get (plist-get b :false) 'x) 'integer))
+    (should (equal (typespec-eval-env-get
+                    (typespec-eval-env-join (plist-get b :true) (plist-get b :false))
+                    'x)
+                   '(or string integer))))
+  ;; `:guard' leaves the false branch unchanged.
+  (let* ((env (typespec-eval-env-make '((x . unknown))))
+         (b (typespec-eval-env-narrow env 'x '(function (unknown) (:guard string)))))
+    (should (equal (typespec-eval-env-get (plist-get b :true) 'x) 'string))
+    (should (equal (typespec-eval-env-get (plist-get b :false) 'x) 'unknown)))
+  ;; `:assert' produces a success environment.
+  (let* ((env (typespec-eval-env-make '((x . unknown))))
+         (b (typespec-eval-env-narrow env 'x '(function (unknown) (:assert integer)))))
+    (should (equal (typespec-eval-env-get (plist-get b :assert) 'x) 'integer)))
+  ;; A non-guard predicate yields no refinement.
+  (should (equal (typespec-eval-env-narrow (typespec-eval-env-make) 'x
+                                           '(function (unknown) boolean))
+                 nil)))
 
 (ert-deftest typespec-eval-call-allow-other-keys ()
   (should (equal (typespec-eval-call

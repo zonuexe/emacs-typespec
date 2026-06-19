@@ -147,13 +147,25 @@ fixed (see `typespec-eval-call-soundness` in `typespec-eval-test.el`):
     `bignum <: fixnum`, and `(integer 0 5) <: bignum` are all rejected, while
     `bignum <: integer`/`number` hold.
 
+## Checker-foundation layer
+
+Two pieces of a flow-sensitive checker exist on top of the evaluator, without
+walking Emacs Lisp source:
+
+- `typespec-eval-call-narrowing` (in `typespec-eval.el`) — the per-branch
+  argument-refinement effect of a guard/assert predicate.
+- `typespec-eval-env.el` — a **type environment** (`var -> type`) with
+  `typespec-eval-env-narrow` (apply a guard tested on a variable, yielding the
+  true/false/assert environments) and `typespec-eval-env-join` (union types at
+  a control-flow confluence).
+
 ## Spec features not yet implemented
 
-- A full flow-sensitive type checker over Emacs Lisp source. The
-  *refinement-effect* building block exists (`typespec-eval-call-narrowing`),
-  but applying it across a function body — tracking lexical bindings and
-  threading the refined types through `if`/`cond`/`and`/`or` branches — is out
-  of scope for the type-level evaluator.
+- A full flow-sensitive type checker over Emacs Lisp source. The refinement
+  and environment building blocks exist (above), but **driving** them from the
+  syntax of a function body — walking `if`/`cond`/`when`/`and`/`or`/`let`,
+  resolving calls, and expanding macros — is out of scope for the type-level
+  evaluator.
 - Conditional (`if`-based) guard returns in `typespec-eval-call-narrowing`
   (the narrowing currently handles a direct `:guard`/`:guard!`/`:assert`
   return, not one selected by an `(if PRED …)`).
